@@ -37,8 +37,8 @@ except ImportError:
 SIGNALS = ['S&P500', 'Gold', 'Oil_WTI', 'USD_Index', 'VIX']
 DISPLAY = {'S&P500': 'S&P 500', 'Gold': 'Gold', 'Oil_WTI': 'Oil', 'USD_Index': 'USD', 'VIX': 'VIX'}
 
-# Premium Fintech Palette (Vercel/Linear/Stripe inspired)
-ACCENT = "#FFFFFF"     # High contrast white for dominant elements
+# Premium Fintech Palette 
+ACCENT = "#5C6BFF"     # Crisp Blue 
 ACCENT2 = "#8A94A3"    # Muted Gray
 POS = "#00E599"        # Fintech Neon Green
 WARN = "#F5A623"       # Premium Amber
@@ -48,24 +48,14 @@ MUTE = "#6B7280"       # Faint Text
 MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
 
-ICO = {
-    "activity": '<path d="M22 12h-4l-3 8L9 4l-3 8H2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
-    "target":   '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
-    "shield":   '<path d="M12 21s7-3.4 7-9V5.5L12 3 5 5.5V12c0 5.6 7 9 7 9z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 8.5v3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="15" r="0.6" fill="currentColor" stroke="currentColor" stroke-width="1"/>',
-    "clock":    '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.5v5l3.2 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
-}
-
 HISTORICAL_EVENTS = {
-    "2008-09-15": "Lehman Brothers files for bankruptcy, triggering global financial crisis.",
-    "2008-10-13": "Global stock markets rally after coordinated bank bailout announcements.",
-    "2008-11-20": "S&P 500 hits multi-year lows amid deepening recession fears.",
-    "2009-03-09": "S&P 500 bottoms out during the Global Financial Crisis.",
-    "2010-05-06": "Flash Crash: Dow Jones drops ~1000 points in minutes.",
-    "2011-08-08": "US credit rating downgraded by S&P, sparking global selloff.",
-    "2015-08-24": "China devaluation fears trigger global market selloff ('Black Monday').",
-    "2020-02-24": "COVID-19 fears trigger global market selloff as cases spread outside China.",
-    "2020-03-16": "Circuit breakers halt trading as COVID-19 panic selling accelerates.",
-    "2022-06-13": "S&P 500 enters bear market amid rate hike and inflation fears.",
+    "2008-09-15": "Lehman Brothers bankruptcy",
+    "2010-05-06": "Flash Crash",
+    "2011-08-08": "US credit rating downgrade",
+    "2015-08-24": "China devaluation ('Black Monday')",
+    "2020-02-24": "COVID-19 market crash",
+    "2020-03-16": "Circuit breakers halt trading",
+    "2022-06-13": "S&P 500 enters bear market",
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -77,12 +67,6 @@ def tint(hex_color, alpha):
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
     return f'rgba({r},{g},{b},{alpha})'
 
-def svg_icon(name, color, size=19):
-    """Return an html.Img holding an inline SVG (color baked in)."""
-    inner = ICO[name].replace('currentColor', color)
-    svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="{size}" height="{size}">{inner}</svg>'
-    uri = "data:image/svg+xml;utf8," + urllib.parse.quote(svg)
-    return html.Img(src=uri, style={'width': f'{size}px', 'height': f'{size}px', 'display': 'block'})
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  DATA + MODEL LOGIC (Untouched Core Logic)
@@ -254,7 +238,7 @@ if not os.environ.get("APP_SKIP_LOAD"):
 # ─────────────────────────────────────────────────────────────────────────────
 #  FINTECH UI HELPERS & LOGIC
 # ─────────────────────────────────────────────────────────────────────────────
-def get_market_regime(score, threshold):
+def get_market_status(score, threshold):
     if pd.isna(score) or pd.isna(threshold): return "Unknown", MUTE
     if score < threshold * 0.75: return "Normal", POS
     if score < threshold: return "Elevated", WARN
@@ -266,12 +250,12 @@ def generate_market_narrative(row):
     contribs = {s: row.get(f'{s}_Contribution', 0) for s in SIGNALS}
     top_asset = max(contribs, key=lambda s: contribs[s] if pd.notna(contribs[s]) else -1)
     pct = contribs[top_asset]
-    regime, _ = get_market_regime(score, thresh)
+    status_label, _ = get_market_status(score, thresh)
     
     if score < thresh:
-        return f"Composite stress remains below the structural threshold. Market regime is classified as {regime}. {DISPLAY[top_asset]} and volatility are currently the largest contributors to the background score. No broad-based systemic stress or anomalous behavior is detected."
+        return f"Composite stress remains below the structural threshold. Market status is classified as {status_label}. {DISPLAY[top_asset]} and volatility are currently the largest contributors to the background score. No broad-based systemic stress or anomalous behavior is detected."
     else:
-        return f"Warning: Composite stress has breached the expanding threshold. Market regime is currently classified as {regime}. The anomaly is heavily driven by {DISPLAY[top_asset]}, accounting for {pct:.0f}% of the divergence. Monitor closely for cross-asset contagion."
+        return f"Warning: Composite stress has breached the expanding threshold. Market status is currently classified as {status_label}. The anomaly is heavily driven by {DISPLAY[top_asset]}, accounting for {pct:.0f}% of the divergence. Monitor closely for cross-asset contagion."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -288,20 +272,26 @@ def build_figure(view):
     y_top = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) * 1.15
     fig = go.Figure()
 
-    # Base subtle glow line
+    # Dynamic line color based on the latest point's status
+    latest = plot_df.iloc[-1] if not plot_df.empty else None
+    line_color = ACCENT
+    if latest is not None:
+        _, line_color = get_market_status(latest['Anomaly_Score'], latest['Threshold'])
+
+    # Subtle glow line
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines',
-                             line=dict(color='rgba(255,255,255,0.1)', width=6, shape='spline', smoothing=0.35),
+                             line=dict(color=tint(line_color, 0.2), width=5, shape='spline', smoothing=0.35),
                              hoverinfo='skip', showlegend=False))
     
     # Main precise line
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines', name='Anomaly Score',
-                             line=dict(color='#FFFFFF', width=2, shape='spline', smoothing=0.35),
-                             fill='tozeroy', fillcolor='rgba(255,255,255,0.08)',
+                             line=dict(color=line_color, width=2, shape='spline', smoothing=0.35),
+                             fill='tozeroy', fillcolor='rgba(255,255,255,0.06)',
                              hovertemplate='Score: <b>%{y:.2f}</b><extra></extra>'))
     
     # Threshold Line
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Threshold'], mode='lines', name='Threshold Limit',
-                             line=dict(color='rgba(255,255,255,0.25)', width=1.5, dash='dash'),
+                             line=dict(color=tint(WARN, 0.6), width=1.5, dash='dash'),
                              hovertemplate='Limit: %{y:.2f}<extra></extra>'))
 
     fp = plot_df[plot_df['Flagged'] == True]
@@ -311,9 +301,9 @@ def build_figure(view):
 
     # Annotations for historical context
     events_to_plot = {
-        "2020-02-24": "COVID Crash",
-        "2022-02-24": "Ukraine Inv.",
-        "2023-03-10": "SVB Collapse"
+        "2020-02-24": "COVID",
+        "2022-02-24": "Ukraine",
+        "2023-03-10": "SVB"
     }
     
     for date_str, label in events_to_plot.items():
@@ -323,53 +313,55 @@ def build_figure(view):
                           annotation_text=label, annotation_position="top left", 
                           annotation_font=dict(color="#A1A1AA", size=10))
 
-    fig.update_layout(height=360, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                      font=dict(color='#A1A1AA', family='Inter', size=12),
+    fig.update_layout(height=260, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                      font=dict(color='#A1A1AA', family='Inter', size=11),
                       legend=dict(orientation='h', y=1.12, x=1, xanchor='right', bgcolor='rgba(0,0,0,0)',
-                                  font=dict(size=12, color='#A1A1AA')),
-                      margin=dict(l=0, r=0, t=30, b=0), hovermode='x unified',
+                                  font=dict(size=11, color='#A1A1AA')),
+                      margin=dict(l=0, r=0, t=20, b=0), hovermode='x unified',
                       hoverlabel=dict(bgcolor='#18181B', bordercolor='rgba(255,255,255,0.1)',
-                                      font=dict(family='Inter', size=13, color='#FAFAFA')))
+                                      font=dict(family='Inter', size=12, color='#FAFAFA')))
     
     fig.update_xaxes(showgrid=False, showline=True, linecolor='rgba(255,255,255,0.1)', zeroline=False,
                      showspikes=True, spikemode='across', spikecolor='rgba(255,255,255,0.15)',
-                     spikethickness=1, spikedash='solid', ticks='outside', tickcolor='rgba(255,255,255,0.1)',
-                     tickfont=dict(size=11, color='#71717A'))
-    fig.update_yaxes(range=[0, y_top], showgrid=True, gridcolor='rgba(255,255,255,0.05)', zeroline=False,
-                     tickfont=dict(size=11, color='#71717A'), ticksuffix='  ')
+                     spikethickness=1, spikedash='solid', ticks='outside', tickcolor='rgba(255,255,255,0.1)')
+    fig.update_yaxes(range=[0, y_top], showgrid=True, gridcolor='rgba(255,255,255,0.05)', zeroline=False, ticksuffix='  ')
     fig.update_traces(cliponaxis=False)
     return fig
 
 
-def build_contribution_chart():
+def build_contribution_chart(r_color):
     row = DF.iloc[-1]
     contribs = {DISPLAY[s]: row.get(f'{s}_Contribution', 0) for s in SIGNALS}
     contribs = dict(sorted(contribs.items(), key=lambda item: item[1]))
     
+    # Top driver gets the active status color, others get muted
+    colors = [r_color if i == len(contribs)-1 else 'rgba(255,255,255,0.12)' for i in range(len(contribs))]
+
     fig = go.Figure(go.Bar(
         x=list(contribs.values()), y=list(contribs.keys()), orientation='h',
-        marker=dict(color='#FFFFFF', opacity=0.9),
+        marker=dict(color=colors),
         text=[f"{v:.1f}%" for v in contribs.values()],
         textposition='outside',
         textfont=dict(color='#A1A1AA', family='Inter', size=11)
     ))
     
     fig.update_layout(
-        margin=dict(l=0, r=40, t=10, b=0), height=200, 
+        margin=dict(l=0, r=30, t=0, b=0), height=140, 
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', zeroline=False, 
-                   showticklabels=False, range=[0, max(contribs.values()) * 1.2]),
-        yaxis=dict(showgrid=False, tickfont=dict(color='#E4E4E7', size=12)),
+        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.04)', zeroline=False, 
+                   showticklabels=False, range=[0, max(contribs.values()) * 1.25]),
+        yaxis=dict(showgrid=False, tickfont=dict(color='#E4E4E7', size=11)),
         font=dict(family='Inter'), hovermode=False
     )
     return fig
 
 
-def kpi_card(label, value, sub, large=False):
+def kpi_card(label, value, sub, large=False, value_color=None):
     classes = 'kpi-card large' if large else 'kpi-card'
+    v_style = {'color': value_color} if value_color else {}
     return html.Div(className=classes, children=[
         html.Div(label, className='kpi-label'),
-        html.Div(value, className='kpi-value'),
+        html.Div(value, className='kpi-value', style=v_style),
         html.Div(sub, className='kpi-sub'),
     ])
 
@@ -377,29 +369,33 @@ def kpi_card(label, value, sub, large=False):
 def fear_greed_kpi():
     fg_val_str = "N/A"
     fg_desc = "Unavailable"
+    fg_color = MUTE
     if HAS_FG:
         try:
             fg = fear_and_greed.get()
             fg_val_str = f"{fg.value:.0f}"
             fg_desc = fg.description.title()
+            # Dynamic coloring
+            desc_low = fg.description.lower()
+            if "fear" in desc_low: fg_color = DANGER
+            elif "greed" in desc_low: fg_color = POS
+            elif "neutral" in desc_low: fg_color = WARN
         except Exception:
             fg_desc = "Fetch Failed"
     else:
         fg_desc = "Module not installed"
         
-    return kpi_card("Fear & Greed Index", fg_val_str, fg_desc, large=True)
+    return kpi_card("Fear & Greed Index", fg_val_str, fg_desc, large=True, value_color=fg_color)
 
 
 def hero_section():
     latest = DF.iloc[-1]
     score, thresh = latest['Anomaly_Score'], latest['Threshold']
-    regime, r_color = get_market_regime(score, thresh)
+    status_label, r_color = get_market_status(score, thresh)
     gap = score - thresh
     up = gap >= 0
     delta_class = 'delta up' if up else 'delta down'
     delta_text = f"{'▲' if up else '▼'} {abs(gap):.2f} vs Threshold"
-    
-    # Fake confidence score based on data completeness
     conf_score = "99.8%" 
     
     return html.Div(className='hero-panel glass-card', children=[
@@ -407,11 +403,12 @@ def hero_section():
             html.Span("Market Anomaly Score", className='hero-title'),
             html.Div(className='hero-badges', children=[
                 html.Span(f"Confidence: {conf_score}", className='badge outline'),
-                html.Span(f"Regime: {regime}", className='badge solid', style={'backgroundColor': tint(r_color, 0.15), 'color': r_color, 'borderColor': tint(r_color, 0.3)})
+                html.Span(f"Status: {status_label}", className='badge solid', 
+                          style={'backgroundColor': tint(r_color, 0.15), 'color': r_color, 'borderColor': tint(r_color, 0.3)})
             ])
         ]),
         html.Div(className='hero-body', children=[
-            html.Div(f"{score:.2f}", className='hero-score gradient-text'),
+            html.Div(f"{score:.2f}", className='hero-score', style={'color': r_color, 'textShadow': f'0 0 32px {tint(r_color, 0.3)}'}),
             html.Div(className='hero-metrics', children=[
                 html.Span(delta_text, className=delta_class),
                 html.Span(f"Last updated: {SUMMARY['updated']}", className='hero-timestamp')
@@ -502,7 +499,7 @@ def build_cards(year, month):
 def validation_section():
     s = SUMMARY
     cards = html.Div(className='fintech-grid kpi-row', children=[
-        kpi_card("Crisis Recall", f"{s['recall']:.0f}%", f"{s['detected']} / {s['total_ev']} events", large=True),
+        kpi_card("Crisis Recall", f"{s['recall']:.0f}%", f"{s['detected']} / {s['total_ev']} events", large=True, value_color=POS if s['recall'] >= 70 else WARN),
         kpi_card("Events Detected", f"{s['detected']}", "within ±7 days"),
         kpi_card("Flagged Days", f"{s['total_flags']:,}", "all history"),
         kpi_card("Daily Flag Rate", f"{s['flag_rate']:.1f}%", "of trading days"),
@@ -536,28 +533,35 @@ def raw_table():
     cols = [{'name': c, 'id': c} for c in raw.columns]
     return dash_table.DataTable(
         data=raw.to_dict('records'), columns=cols, page_size=15,
-        style_table={'overflowX': 'auto', 'borderRadius': '12px'},
+        style_table={'overflowX': 'auto', 'borderRadius': '10px'},
         style_header={'backgroundColor': 'transparent', 'color': '#A1A1AA', 'fontWeight': '500',
                       'borderBottom': '1px solid rgba(255,255,255,0.1)', 'fontFamily': 'Inter',
-                      'fontSize': '12px', 'textAlign': 'left', 'padding': '12px'},
+                      'fontSize': '11px', 'textAlign': 'left', 'padding': '10px'},
         style_cell={'backgroundColor': 'transparent', 'color': '#E4E4E7',
-                    'borderBottom': '1px solid rgba(255,255,255,0.05)', 'fontFamily': 'JetBrains Mono',
-                    'fontSize': '12px', 'padding': '12px', 'textAlign': 'left'},
+                    'borderBottom': '1px solid rgba(255,255,255,0.04)', 'fontFamily': 'JetBrains Mono',
+                    'fontSize': '12px', 'padding': '10px', 'textAlign': 'left'},
         style_data_conditional=[{'if': {'filter_query': '{Flagged} eq 1'}, 'backgroundColor': 'rgba(255,75,75,0.05)'}]
     )
 
 
-VIEWS = [("overview", "Overview"), ("timeline", "Timeline"), ("alerts", "Alerts"), ("validation", "Validation"), ("raw", "Raw Data")]
+VIEWS = [("overview", "Overview", "◈"), ("timeline", "Timeline", "∿"), ("alerts", "Alerts", "⚠"), 
+         ("validation", "Validation", "✓"), ("raw", "Raw Data", "▤")]
 
 def sidebar(active="overview"):
     return html.Div(className='sidebar', children=[
         html.Div(className='brand-logo', children=[
-            html.Div(className='logo-mark'), html.Span("Anomaly")
+            html.Div(className='logo-left', children=[
+                html.Div(className='logo-mark'), 
+                html.Span("Anomaly", className='brand-name')
+            ]),
+            html.Div("☰", id='sidebar-toggle', className='sidebar-toggle', n_clicks=0)
         ]),
         html.Div(className='nav-menu', children=[
-            html.Div(label, id={'type': 'nav', 'index': key},
-                   className='nav-item active' if key == active else 'nav-item',
-                   n_clicks=0) for key, label in VIEWS
+            html.Div([
+                html.Span(ico, className='ico'), 
+                html.Span(label, className='nav-label')
+            ], id={'type': 'nav', 'index': key}, className='nav-item active' if key == active else 'nav-item', n_clicks=0) 
+            for key, label, ico in VIEWS
         ])
     ])
 
@@ -572,17 +576,17 @@ def build_view(view_key):
     if view_key == "overview":
         latest = DF.iloc[-1]
         score, thresh = latest['Anomaly_Score'], latest['Threshold']
-        regime, r_color = get_market_regime(score, thresh)
+        status_label, r_color = get_market_status(score, thresh)
 
-        # Row 1: Chart & Regime
+        # Row 1: Chart & Status
         row_1 = html.Div(className='fintech-grid layout-row-1', children=[
             html.Div(className='glass-card col-span-2', children=[
                 html.Div("Systemic Stress Timeline", className='card-title'),
                 dcc.Graph(id='overview-chart', figure=build_figure("Last 6 Months"), config={'displayModeBar': False})
             ]),
             html.Div(className='glass-card flex-col center-content', children=[
-                html.Div("Current Regime", className='card-title'),
-                html.Div(regime, className='regime-display gradient-text', style={'backgroundImage': f'linear-gradient(135deg, #FFFFFF, {r_color})'}),
+                html.Div("Current Status", className='card-title'),
+                html.Div(status_label, className='status-display', style={'color': r_color}),
                 html.Div(f"Threshold limit: {thresh:.2f}", className='kpi-sub mt-2')
             ])
         ])
@@ -591,7 +595,7 @@ def build_view(view_key):
         row_2 = html.Div(className='fintech-grid layout-row-2', children=[
             html.Div(className='glass-card', children=[
                 html.Div("Drivers of Today's Score", className='card-title'),
-                dcc.Graph(figure=build_contribution_chart(), config={'displayModeBar': False})
+                dcc.Graph(figure=build_contribution_chart(r_color), config={'displayModeBar': False})
             ]),
             html.Div(className='glass-card flex-col', children=[
                 html.Div("Market Narrative", className='card-title'),
@@ -604,7 +608,7 @@ def build_view(view_key):
             fear_greed_kpi(),
             kpi_card("Expanding Threshold", f"{thresh:.2f}", "Causal mean + 2σ"),
             kpi_card("Alert Frequency", f"{SUMMARY['flag_rate']:.1f}%", "All-time rate"),
-            kpi_card("Total Alerts", f"{SUMMARY['total_flags']}", "Historical events"),
+            kpi_card("Total Alerts", f"{SUMMARY['total_flags']}", "Historical events", value_color=ACCENT),
         ])
 
         return html.Div(className='view-fade-in', children=[
@@ -617,10 +621,12 @@ def build_view(view_key):
     elif view_key == "timeline":
         return html.Div(className='view-fade-in', children=[
             html.H2("Full Anomaly Timeline", className='section-title'),
-            html.Div(className='glass-card p-4', children=[
-                dcc.Dropdown(id='range-dd', className='fintech-dd',
-                    options=[{'label': v, 'value': v} for v in ["Last 6 Months", "Last 2 Years", "Full History (2005-Present)"]],
-                    value="Last 2 Years", clearable=False),
+            html.Div(className='glass-card', children=[
+                html.Div(className='control-wrapper', children=[
+                    dcc.Dropdown(id='range-dd', className='fintech-dd',
+                        options=[{'label': v, 'value': v} for v in ["Last 6 Months", "Last 2 Years", "Full History (2005-Present)"]],
+                        value="Last 2 Years", clearable=False),
+                ]),
                 dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years"), config={'displayModeBar': False}),
             ])
         ])
@@ -633,7 +639,7 @@ def build_view(view_key):
                 dcc.Dropdown(id='year-dd', className='fintech-dd', options=year_opts, value='All Years', clearable=False),
                 dcc.Dropdown(id='month-dd', className='fintech-dd', options=[{'label': 'All Months', 'value': 'All Months'}], value='All Months', clearable=False),
             ]),
-            dcc.Loading(type='circle', color='#FFFFFF', children=html.Div(id='cards-container')),
+            dcc.Loading(type='circle', color=ACCENT, children=html.Div(id='cards-container')),
         ])
         
     elif view_key == "validation":
@@ -656,12 +662,12 @@ def build_layout():
             html.Code(LOAD_ERR)
         ])
 
-    return html.Div(className='app-container', children=[
+    return html.Div(id='app-container', className='app-container', children=[
         sidebar("overview"),
         html.Div(className='main-content', children=[
             html.Div(className='top-nav', children=[
                 html.Div("Market Intelligence", className='nav-title'),
-                html.Div(className='status-indicator', children=[html.Span(className='status-dot'), "System Operational"])
+                html.Div(className='status-indicator', children=[html.Span(className='status-dot'), "Live Data"])
             ]),
             html.Div(id='view-container', children=build_view("overview")),
         ]),
@@ -673,6 +679,20 @@ app.layout = build_layout
 # ─────────────────────────────────────────────────────────────────────────────
 #  CALLBACKS
 # ─────────────────────────────────────────────────────────────────────────────
+@callback(
+    Output('app-container', 'className'),
+    Input('sidebar-toggle', 'n_clicks'),
+    State('app-container', 'className'),
+    prevent_initial_call=True
+)
+def toggle_sidebar(n_clicks, current_class):
+    if not n_clicks: return no_update
+    if 'collapsed' in current_class:
+        return current_class.replace(' collapsed', '')
+    else:
+        return current_class + ' collapsed'
+
+
 @callback(Output('anomaly-chart', 'figure'), Input('range-dd', 'value'))
 def update_chart(view):
     if not DATA_OK: return no_update
