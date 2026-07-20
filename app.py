@@ -9,6 +9,7 @@ import pandas as pd
 import requests
 import yfinance as yf
 import plotly.graph_objects as go
+import fear_and_greed
 
 from dash import Dash, html, dcc, Input, Output, State, callback, dash_table, MATCH, ALL, no_update, ctx
 
