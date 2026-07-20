@@ -10,7 +10,7 @@ import requests
 import yfinance as yf
 import plotly.graph_objects as go
 
-from dash import Dash, html, dcc, Input, Output, State, callback, dash_table, MATCH, ALL, no_update, ctx
+from dash import Dash, html, dcc, Input, Output, State, callback, clientside_callback, dash_table, MATCH, ALL, no_update, ctx
 
 # Optional scientific deps
 try:
@@ -663,6 +663,7 @@ def build_layout():
         ])
 
     return html.Div(id='app-container', className='app-container', children=[
+        dcc.Store(id='sidebar-state', data=False),
         sidebar("overview"),
         html.Div(className='main-content', children=[
             html.Div(className='top-nav', children=[
@@ -679,19 +680,26 @@ app.layout = build_layout
 # ─────────────────────────────────────────────────────────────────────────────
 #  CALLBACKS
 # ─────────────────────────────────────────────────────────────────────────────
-@callback(
+
+clientside_callback(
+    """
+    function(n_clicks, is_collapsed, current_class) {
+        if (!n_clicks) {
+            return [window.dash_clientside.no_update, window.dash_clientside.no_update];
+        }
+        var new_state = !is_collapsed;
+        var base = (current_class || "app-container").replace(" collapsed", "");
+        var new_class = new_state ? base + " collapsed" : base;
+        return [new_state, new_class];
+    }
+    """,
+    Output('sidebar-state', 'data'),
     Output('app-container', 'className'),
     Input('sidebar-toggle', 'n_clicks'),
+    State('sidebar-state', 'data'),
     State('app-container', 'className'),
     prevent_initial_call=True
 )
-def toggle_sidebar(n_clicks, current_class):
-    if not n_clicks: return no_update
-    if 'collapsed' in current_class:
-        return current_class.replace(' collapsed', '')
-    else:
-        return current_class + ' collapsed'
-
 
 @callback(Output('anomaly-chart', 'figure'), Input('range-dd', 'value'))
 def update_chart(view):
