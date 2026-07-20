@@ -80,16 +80,47 @@ def svg_icon(name, color, size=19):
 #  DATA + MODEL LOGIC  (identical maths to the Streamlit build; caching swapped
 #  from @st.cache_data to module-level compute + lru_cache)
 # ─────────────────────────────────────────────────────────────────────────────
+import time
+
 def load_data():
-    """Download daily closes for the five monitored instruments since 2005."""
-    tickers = {'S&P500': '^GSPC', 'VIX': '^VIX', 'Gold': 'GC=F', 'Oil_WTI': 'CL=F', 'USD_Index': 'DX-Y.NYB'}
+    """Download daily closes for the five monitored instruments since 2005.
+    Tries defeatbeta-api first (no rate limits, cached parquet source),
+    falls back to yfinance with retries if defeatbeta-api is unavailable."""
+    tickers = {'S&P500': '^GSPC', 'VIX': '^VIX', 'Gold': 'GC=F',
+               'Oil_WTI': 'CL=F', 'USD_Index': 'DX-Y.NYB'}
     data = {}
+
+    try:
+        from defeatbeta_api.data.ticker import Ticker as DBTicker
+        for name, t in tickers.items():
+            dbt = DBTicker(t)
+            price_df = dbt.price()
+            price_df['report_date'] = pd.to_datetime(price_df['report_date'])
+            price_df = price_df.set_index('report_date').sort_index()
+            price_df = price_df[price_df.index >= '2005-01-01']
+            data[name] = price_df['close']
+        df = pd.DataFrame(data).dropna()
+        if len(df) > 0:
+            return df
+    except Exception:
+        pass  # fall through to yfinance below
+
     for name, t in tickers.items():
-        d = yf.download(t, start='2005-01-01', progress=False)
-        close = d['Close']
-        if isinstance(close, pd.DataFrame):
-            close = close.iloc[:, 0]
-        data[name] = close
+        close = None
+        for attempt in range(4):
+            try:
+                d = yf.download(t, start='2005-01-01', progress=False)
+                c = d['Close']
+                if isinstance(c, pd.DataFrame):
+                    c = c.iloc[:, 0]
+                if len(c) > 0:
+                    close = c
+                    break
+            except Exception:
+                pass
+            time.sleep(2 ** attempt)  # exponential backoff: 1s, 2s, 4s, 8s
+        data[name] = close if close is not None else pd.Series(dtype=float)
+
     return pd.DataFrame(data).dropna()
 
 
