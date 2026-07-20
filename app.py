@@ -296,7 +296,7 @@ def build_figure(view):
     # Main precise line
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines', name='Anomaly Score',
                              line=dict(color='#FFFFFF', width=2, shape='spline', smoothing=0.35),
-                             fill='tozeroy', fillcolor='url(#linear-gradient)',
+                             fill='tozeroy', fillcolor='rgba(255,255,255,0.08)',
                              hovertemplate='Score: <b>%{y:.2f}</b><extra></extra>'))
     
     # Threshold Line
