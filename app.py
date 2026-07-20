@@ -10,7 +10,7 @@ import requests
 import yfinance as yf
 import plotly.graph_objects as go
 
-from dash import Dash, html, dcc, Input, Output, State, callback, dash_table, MATCH, no_update
+from dash import Dash, html, dcc, Input, Output, State, callback, dash_table, MATCH, ALL, no_update, ctx
 
 # Optional scientific deps — the app degrades gracefully if they're missing.
 try:
@@ -515,7 +515,35 @@ def raw_table():
 
 def section_label(text):
     return html.Div(className='section-label', children=[html.Span(className='sq'), html.Span(text)])
+VIEWS = [
+    ("overview", "Overview", "◈"),
+    ("timeline", "Timeline", "∿"),
+    ("alerts", "Alerts", "⚠"),
+    ("validation", "Validation", "✓"),
+    ("raw", "Raw Data", "▤"),
+]
 
+def sidebar(active="overview"):
+    return html.Div(className='sidebar', children=[
+        html.Div(className='sidebar-logo', children=[html.Span(className='dot'), "Anomaly Detector"]),
+        *[html.Div(label, id={'type': 'nav', 'index': key},
+                   className='nav-item active' if key == active else 'nav-item',
+                   n_clicks=0) for key, label, ico in VIEWS],
+    ])
+
+def hero_stat():
+    latest = DF.iloc[-1]
+    score, thresh = latest['Anomaly_Score'], latest['Threshold']
+    gap = score - thresh
+    up = gap >= 0
+    return html.Div(className='hero', children=[
+        html.Div(className='hero-value', children=[
+            html.Span(f"{score:.2f}"),
+            html.Span(f"{'▲' if up else '▼'} {abs(gap):.2f}",
+                      className='hero-delta up' if up else 'hero-delta down'),
+        ]),
+        html.Div("Current Anomaly Score · threshold " + f"{thresh:.2f}", className='hero-label'),
+    ])
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  DASH APP + LAYOUT
@@ -524,7 +552,44 @@ app = Dash(__name__, suppress_callback_exceptions=True,
            title="Market Anomaly Detector")
 server = app.server   # <-- gunicorn entrypoint for Render
 
-
+def build_view(view_key):
+    if view_key == "overview" or view_key == "timeline":
+        return html.Div([
+            kpi_row_top(),
+            section_label("Anomaly Score Timeline"),
+            html.Div(className='control', children=[
+                html.Label("Select time range", className='ctl-label'),
+                dcc.Dropdown(id='range-dd', className='dd',
+                    options=[{'label': v, 'value': v} for v in
+                             ["Last 6 Months", "Last 2 Years", "Full History (2005-Present)"]],
+                    value="Last 6 Months", clearable=False),
+            ]),
+            dcc.Graph(id='anomaly-chart', figure=build_figure("Last 6 Months"),
+                      config={'displayModeBar': False}),
+        ])
+    elif view_key == "alerts":
+        year_opts = [{'label': 'All Years', 'value': 'All Years'}] + \
+            [{'label': str(y), 'value': str(y)} for y in AVAIL_YEARS]
+        return html.Div([
+            section_label("Flagged Anomaly Days"),
+            html.Div(className='filter-row', children=[
+                html.Div(className='control', children=[
+                    html.Label("Year", className='ctl-label'),
+                    dcc.Dropdown(id='year-dd', className='dd', options=year_opts,
+                                 value='All Years', clearable=False)]),
+                html.Div(className='control', children=[
+                    html.Label("Month (optional)", className='ctl-label'),
+                    dcc.Dropdown(id='month-dd', className='dd',
+                                 options=[{'label': 'All Months', 'value': 'All Months'}],
+                                 value='All Months', clearable=False)]),
+            ]),
+            dcc.Loading(type='circle', color=NEON, children=html.Div(id='cards-container')),
+        ])
+    elif view_key == "validation":
+        return validation_section()
+    elif view_key == "raw":
+        return html.Div([section_label("Raw Data Explorer"), raw_table()])
+    return html.Div("View not found.")
 def header():
     return html.Div(className='top-header', children=[
         html.Div([
@@ -549,51 +614,14 @@ def build_layout():
     year_opts = [{'label': 'All Years', 'value': 'All Years'}] + \
                 [{'label': str(y), 'value': str(y)} for y in AVAIL_YEARS]
 
-    return html.Div(className='app', children=[
+    return html.Div(className='shell', children=[
+    sidebar("overview"),
+    html.Div(className='content', children=[
         header(),
-        kpi_row_top(),
-
-        section_label("Anomaly Score Timeline"),
-        html.Div(className='control', children=[
-            html.Label("Select time range", className='ctl-label'),
-            dcc.Dropdown(id='range-dd', className='dd',
-                         options=[{'label': v, 'value': v} for v in
-                                  ["Last 6 Months", "Last 2 Years", "Full History (2005-Present)"]],
-                         value="Last 6 Months", clearable=False),
-        ]),
-        dcc.Graph(id='anomaly-chart', figure=build_figure("Last 6 Months"),
-                  config={'displayModeBar': False}),
-
-        section_label("Flagged Anomaly Days"),
-        html.Div("Select a year (and optionally a month) to browse anomalies, then expand any card to load "
-                 "real news from that exact date. Each card names the asset that drove the day's score.",
-                 className='caption'),
-        html.Div(className='filter-row', children=[
-            html.Div(className='control', children=[
-                html.Label("Year", className='ctl-label'),
-                dcc.Dropdown(id='year-dd', className='dd', options=year_opts, value='All Years', clearable=False)]),
-            html.Div(className='control', children=[
-                html.Label("Month (optional)", className='ctl-label'),
-                dcc.Dropdown(id='month-dd', className='dd', options=[{'label': 'All Months', 'value': 'All Months'}],
-                             value='All Months', clearable=False)]),
-        ]),
-        dcc.Loading(type='circle', color=NEON, children=html.Div(id='cards-container')),
-
-        validation_section(),
-
-        section_label("Raw Data Explorer"),
-        html.Div(className='context-box', children=[
-            html.B("What am I looking at?"), html.Br(),
-            "The last 100 trading days feeding the model. Each signal has its daily return, 63-day rolling "
-            "mean/std, and z-score; ", html.B("Anomaly_Score"), " is their root-mean-square; the ",
-            html.B("*_Contribution"), " columns give each signal's share (summing to 100%); ",
-            html.B("Threshold"), " is the causal expanding mean + 2σ; and ", html.B("Flagged"),
-            " marks days that crossed it. Flagged rows are tinted red."]),
-        raw_table(),
-
-        html.Div("Data source: Yahoo Finance + Google News  ·  Model: RMS cross-asset z-score with causal "
-                 "expanding threshold  ·  Comparison: Isolation Forest", className='footer-note'),
-    ])
+        hero_stat(),
+        html.Div(id='view-container', className='view', children=build_view("overview")),
+    ]),
+])
 
 
 app.layout = build_layout
@@ -641,6 +669,14 @@ def load_news(n_clicks, btn_id):
         html.A("Read more →", href=link, target="_blank", className='news-link'),
     ]) for (title, link, pub) in news]
 
+
+@callback(Output('view-container', 'children'), Output({'type': 'nav', 'index': ALL}, 'className'),
+          Input({'type': 'nav', 'index': ALL}, 'n_clicks'),
+          State({'type': 'nav', 'index': ALL}, 'id'), prevent_initial_call=True)
+def switch_view(n_clicks, ids):
+    triggered = ctx.triggered_id['index'] if ctx.triggered_id else "overview"
+    classes = ['nav-item active' if i['index'] == triggered else 'nav-item' for i in ids]
+    return build_view(triggered), classes
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  RENDER-COMPATIBLE RUN BLOCK
