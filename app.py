@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 
 from dash import Dash, html, dcc, Input, Output, State, callback, dash_table, MATCH, ALL, no_update, ctx
 
-# Optional scientific deps — the app degrades gracefully if they're missing.
+# Optional scientific deps
 try:
     from scipy.stats import chi2
     HAS_SCIPY = True
@@ -24,15 +24,26 @@ try:
 except ImportError:
     HAS_SKLEARN = False
 
+# New Fear & Greed dependency
+try:
+    import fear_and_greed
+    HAS_FG = True
+except ImportError:
+    HAS_FG = False
+
 # ─────────────────────────────────────────────────────────────────────────────
-#  CONSTANTS
+#  CONSTANTS & THEME
 # ─────────────────────────────────────────────────────────────────────────────
 SIGNALS = ['S&P500', 'Gold', 'Oil_WTI', 'USD_Index', 'VIX']
 DISPLAY = {'S&P500': 'S&P 500', 'Gold': 'Gold', 'Oil_WTI': 'Oil', 'USD_Index': 'USD', 'VIX': 'VIX'}
 
-# palette (kept in sync with assets/style.css)
-NEON, NEON2, POS, WARN, DANGER, MUTE = "#22D3EE", "#818CF8", "#34D399", "#FBBF24", "#FB4B57", "#94A3B8"
-TXT_FAINT = "#5A6576"
+# Linear/Robinhood-inspired premium dark palette
+ACCENT = "#5C6BFF"     # Sleek Indigo/Blue
+ACCENT2 = "#8A94A3"    # Muted Gray
+POS = "#00C805"        # Robinhood Green
+WARN = "#F5A623"       # Premium Amber
+DANGER = "#FF5000"     # Robinhood Red / Vibrant Orange
+MUTE = "#6B7280"       # Faint Text
 
 MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
@@ -57,7 +68,6 @@ HISTORICAL_EVENTS = {
     "2022-06-13": "S&P 500 enters bear market amid rate hike and inflation fears.",
 }
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 #  SMALL HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -67,25 +77,19 @@ def tint(hex_color, alpha):
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
     return f'rgba({r},{g},{b},{alpha})'
 
-
 def svg_icon(name, color, size=19):
-    """Return an html.Img holding an inline SVG (color baked in, so it renders in <img>)."""
+    """Return an html.Img holding an inline SVG (color baked in)."""
     inner = ICO[name].replace('currentColor', color)
     svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="{size}" height="{size}">{inner}</svg>'
     uri = "data:image/svg+xml;utf8," + urllib.parse.quote(svg)
     return html.Img(src=uri, style={'width': f'{size}px', 'height': f'{size}px', 'display': 'block'})
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-#  DATA + MODEL LOGIC  (identical maths to the Streamlit build; caching swapped
-#  from @st.cache_data to module-level compute + lru_cache)
+#  DATA + MODEL LOGIC (Untouched Core Logic)
 # ─────────────────────────────────────────────────────────────────────────────
 import time
 
 def load_data():
-    """Download daily closes for the five monitored instruments since 2005.
-    Tries defeatbeta-api first (no rate limits, cached parquet source),
-    falls back to yfinance with retries if defeatbeta-api is unavailable."""
     tickers = {'S&P500': '^GSPC', 'VIX': '^VIX', 'Gold': 'GC=F',
                'Oil_WTI': 'CL=F', 'USD_Index': 'DX-Y.NYB'}
     data = {}
@@ -118,20 +122,12 @@ def load_data():
                     break
             except Exception:
                 pass
-            time.sleep(2 ** attempt)  # exponential backoff: 1s, 2s, 4s, 8s
+            time.sleep(2 ** attempt)  
         data[name] = close if close is not None else pd.Series(dtype=float)
 
     return pd.DataFrame(data).dropna()
 
-
 def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
-    """
-    Causal, explainable cross-asset anomaly score.
-      1. z-score each signal (log-return z for price assets; level z for VIX)
-      2. composite = RMS z-score  sqrt(mean(z_i^2))  (equal weights, chi-square-linked)
-      3. per-asset contributions  z_i^2 / sum(z_j^2)  (%, sum to 100)
-      4. causal EXPANDING threshold (past-only, shift(1)) -> no look-ahead leakage
-    """
     df = prices.copy()
     price_assets = ['S&P500', 'Gold', 'Oil_WTI', 'USD_Index']
 
@@ -163,9 +159,7 @@ def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
     df['Flagged'] = df['Anomaly_Score'] > df['Threshold']
     return df
 
-
 def compute_isolation_forest(scored_df, contamination):
-    """Isolation Forest on the same five z-scores (in-sample; contamination matched)."""
     zcols = [f'{s}_Zscore' for s in SIGNALS]
     feat = scored_df[zcols].dropna()
     clf = IsolationForest(n_estimators=300, contamination=contamination, random_state=42)
@@ -177,9 +171,7 @@ def compute_isolation_forest(scored_df, contamination):
     out['IF_Flagged'] = out['IF_Flagged'].fillna(False).astype(bool)
     return out
 
-
 def validate_events(scored_df, events, flag_col='Flagged', window_days=7):
-    """Did `flag_col` fire within +/- window_days of each crisis? Nearest flag + peak score."""
     rows = []
     fidx = scored_df.index[scored_df[flag_col].fillna(False)]
     for ds, desc in sorted(events.items()):
@@ -193,10 +185,8 @@ def validate_events(scored_df, events, flag_col='Flagged', window_days=7):
         rows.append({'date': ds, 'event': desc, 'detected': detected, 'nearest': nearest, 'peak': peak})
     return rows
 
-
 @lru_cache(maxsize=256)
 def get_news_for_date(date_str, days_window=1):
-    """Google News RSS headlines for a given date (cached per date)."""
     try:
         d = datetime.strptime(date_str, "%Y-%m-%d")
         after = d.strftime("%Y-%m-%d")
@@ -210,9 +200,8 @@ def get_news_for_date(date_str, days_window=1):
     except Exception:
         return tuple()
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-#  STARTUP: build everything once (Render boots this, then serves callbacks fast)
+#  STARTUP
 # ─────────────────────────────────────────────────────────────────────────────
 DF = DF_IF = None
 VAL = VAL_IF = None
@@ -220,7 +209,6 @@ AVAIL_YEARS = []
 SUMMARY = {}
 DATA_OK = False
 LOAD_ERR = ""
-
 
 def init_data():
     global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR
@@ -255,11 +243,10 @@ def init_data():
     AVAIL_YEARS = sorted(flags.index.year.unique(), reverse=True)
     DATA_OK = True
 
-
 if not os.environ.get("APP_SKIP_LOAD"):
     try:
         init_data()
-    except Exception as e:          # keep the server bootable even if the feed hiccups
+    except Exception as e:
         DATA_OK = False
         LOAD_ERR = str(e)
 
@@ -278,48 +265,51 @@ def build_figure(view):
     y_top = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) * 1.10
     fig = go.Figure()
 
+    # Base subtle glow line
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines',
-                             line=dict(color='rgba(34,211,238,0.28)', width=9, shape='spline', smoothing=0.35),
+                             line=dict(color=tint(ACCENT, 0.15), width=9, shape='spline', smoothing=0.35),
                              hoverinfo='skip', showlegend=False))
+    
+    # Main precise line
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines', name='Anomaly Score',
-                             line=dict(color='#22D3EE', width=2.4, shape='spline', smoothing=0.35),
-                             fill='tozeroy', fillcolor='rgba(34,211,238,0.10)',
+                             line=dict(color=ACCENT, width=2.4, shape='spline', smoothing=0.35),
+                             fill='tozeroy', fillcolor=tint(ACCENT, 0.08),
                              hovertemplate='Score  <b>%{y:.2f}</b><extra></extra>'))
+    
+    # Threshold Line
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Threshold'], mode='lines', name='Threshold (expanding)',
-                             line=dict(color='rgba(226,232,240,0.40)', width=1.4, dash='dot'),
+                             line=dict(color='rgba(255,255,255,0.15)', width=1.4, dash='dash'),
                              hovertemplate='Threshold  %{y:.2f}<extra></extra>'))
 
     fp = plot_df[plot_df['Flagged'] == True]
     fig.add_trace(go.Scatter(x=fp.index, y=fp['Anomaly_Score'], mode='markers',
-                             marker=dict(color='rgba(251,75,87,0.28)', size=18, symbol='circle'),
+                             marker=dict(color=tint(DANGER, 0.20), size=16, symbol='circle'),
                              hoverinfo='skip', showlegend=False))
     fig.add_trace(go.Scatter(x=fp.index, y=fp['Anomaly_Score'], mode='markers', name='Flagged Day',
-                             marker=dict(color='#FB4B57', size=8, line=dict(color='#0B111A', width=1.6), symbol='circle'),
+                             marker=dict(color=DANGER, size=7, line=dict(color='#0A0C10', width=1.5), symbol='circle'),
                              hovertemplate='⚠ Flagged  ·  <b>%{y:.2f}</b><extra></extra>'))
 
     fig.update_layout(height=430, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                      font=dict(color='#AEB7C4', family='Inter', size=12),
+                      font=dict(color='#8A94A3', family='Inter', size=12),
                       legend=dict(orientation='h', y=1.10, x=1, xanchor='right', bgcolor='rgba(0,0,0,0)',
-                                  font=dict(size=11, color='#8C97A8')),
-                      margin=dict(l=8, r=8, t=34, b=8), hovermode='x unified',
-                      hoverlabel=dict(bgcolor='rgba(13,19,28,0.94)', bordercolor='rgba(148,163,184,0.25)',
-                                      font=dict(family='JetBrains Mono', size=12, color='#E8EEF5')))
-    fig.update_xaxes(showgrid=False, showline=True, linecolor='rgba(148,163,184,0.14)', zeroline=False,
-                     showspikes=True, spikemode='across', spikecolor='rgba(148,163,184,0.28)',
-                     spikethickness=1, spikedash='dot', ticks='outside', tickcolor='rgba(148,163,184,0.14)',
+                                  font=dict(size=12, color='#8A94A3')),
+                      margin=dict(l=0, r=0, t=34, b=0), hovermode='x unified',
+                      hoverlabel=dict(bgcolor='#141820', bordercolor='rgba(255,255,255,0.1)',
+                                      font=dict(family='JetBrains Mono', size=12, color='#F3F4F6')))
+    
+    fig.update_xaxes(showgrid=False, showline=True, linecolor='rgba(255,255,255,0.08)', zeroline=False,
+                     showspikes=True, spikemode='across', spikecolor='rgba(255,255,255,0.15)',
+                     spikethickness=1, spikedash='solid', ticks='outside', tickcolor='rgba(255,255,255,0.08)',
                      tickfont=dict(size=11))
-    fig.update_yaxes(range=[0, y_top], showgrid=True, gridcolor='rgba(148,163,184,0.07)', zeroline=False,
+    fig.update_yaxes(range=[0, y_top], showgrid=True, gridcolor='rgba(255,255,255,0.04)', zeroline=False,
                      tickfont=dict(size=11), ticksuffix='  ')
     fig.update_traces(cliponaxis=False)
     return fig
 
 
 def kpi_card(icon, label, value, sub, accent):
-    icon_style = {'color': accent, 'background': tint(accent, 0.12),
-                  'border': f'1px solid {tint(accent, 0.30)}'}
+    icon_style = {'color': accent, 'background': tint(accent, 0.12)}
     return html.Div(className='kpi', children=[
-        html.Div(className='kpi-bar',
-                 style={'background': f'linear-gradient(90deg, transparent, {accent}, transparent)'}),
         html.Div(className='kpi-top', children=[
             html.Div(label, className='kpi-label'),
             html.Div(svg_icon(icon, accent), className='kpi-ico', style=icon_style),
@@ -329,14 +319,40 @@ def kpi_card(icon, label, value, sub, accent):
     ])
 
 
+def fear_greed_kpi():
+    """Fetches the CNN Fear & Greed index gracefully."""
+    fg_val_str = "N/A"
+    fg_desc = "Unavailable"
+    fg_acc = MUTE
+    
+    if HAS_FG:
+        try:
+            fg = fear_and_greed.get()
+            val = fg.value
+            fg_val_str = f"{val:.0f}/100"
+            fg_desc = fg.description.title()
+            
+            desc_low = fg.description.lower()
+            if "fear" in desc_low:
+                fg_acc = DANGER
+            elif "greed" in desc_low:
+                fg_acc = POS
+        except Exception:
+            fg_desc = "Fetch Failed"
+    else:
+        fg_desc = "fear-and-greed not installed"
+        
+    return kpi_card("target", "Market Fear Index", fg_val_str, fg_desc, fg_acc)
+
+
 def kpi_row_top():
     latest = DF.iloc[-1]
     score, thresh = latest['Anomaly_Score'], latest['Threshold']
     gap = score - thresh
     if gap >= 0:
-        gap_sub = html.Span(f'▲ {gap:.2f} above threshold', style={'color': DANGER})
+        gap_sub = html.Span(f'▲ {gap:.2f} above limit', style={'color': DANGER})
     else:
-        gap_sub = html.Span(f'▼ {abs(gap):.2f} below threshold', style={'color': POS})
+        gap_sub = html.Span(f'▼ {abs(gap):.2f} below limit', style={'color': POS})
 
     flagged_now = bool(latest['Flagged'])
     status_txt = "ANOMALY" if flagged_now else "NORMAL"
@@ -344,10 +360,11 @@ def kpi_row_top():
     status_sub = "Market stress detected" if flagged_now else "Within normal range"
 
     return html.Div(className='kpi-grid', children=[
-        kpi_card("activity", "Latest Anomaly Score", f"{score:.2f}", gap_sub, NEON),
-        kpi_card("target", "Threshold", f"{thresh:.2f}", "expanding · mean + 2σ (causal)", NEON2),
+        kpi_card("activity", "Anomaly Score", f"{score:.2f}", gap_sub, ACCENT),
+        fear_greed_kpi(),
+        kpi_card("target", "Threshold", f"{thresh:.2f}", "Expanding mean + 2σ", ACCENT2),
         kpi_card("shield", "Current Status", status_txt, status_sub, status_acc),
-        kpi_card("clock", "Last Updated", SUMMARY['updated'], "Auto-refresh · on reload", MUTE),
+        kpi_card("clock", "Last Updated", SUMMARY['updated'], "Refreshed on reload", MUTE),
     ])
 
 
@@ -388,18 +405,18 @@ def alert_card(date_idx, row):
         html.Button("Load headlines", id={'type': 'news-btn', 'index': date_str},
                     n_clicks=0, className='news-load-btn'))
     details_children.append(
-        dcc.Loading(type='circle', color=NEON,
+        dcc.Loading(type='circle', color=ACCENT,
                     children=html.Div(id={'type': 'news-out', 'index': date_str})))
 
     return html.Div(className='alert', children=[
-        html.Div(className='alert-rail', style={'background': sev, 'boxShadow': f'0 0 16px {sev}'}),
+        html.Div(className='alert-rail', style={'background': sev}),
         html.Div(className='alert-body', children=[
             html.Div(className='alert-row1', children=[
                 html.Div(className='alert-left', children=[
                     html.Span(date_pretty, className='alert-date'),
                     html.Span(sev_label, className='sev-pill',
                               style={'color': sev, 'background': tint(sev, 0.13),
-                                     'border': f'1px solid {tint(sev, 0.34)}'}),
+                                     'border': f'1px solid {tint(sev, 0.20)}'}),
                 ]),
                 html.Span(f"{row['Anomaly_Score']:.2f}", className='alert-score', style={'color': sev}),
             ]),
@@ -438,10 +455,10 @@ def build_cards(year, month):
 def validation_section():
     s = SUMMARY
     recall_acc = POS if s['recall'] >= 70 else WARN
-    cards = html.Div(className='kpi-grid', children=[
+    cards = html.Div(className='kpi-grid', style={'gridTemplateColumns': 'repeat(4, 1fr)'}, children=[
         kpi_card("shield", "Crisis Recall", f"{s['recall']:.0f}%", f"{s['detected']} of {s['total_ev']} events", recall_acc),
-        kpi_card("activity", "Events Detected", f"{s['detected']}/{s['total_ev']}", "within ±7 days", NEON),
-        kpi_card("target", "Flagged Days", f"{s['total_flags']:,}", "across all history", NEON2),
+        kpi_card("activity", "Events Detected", f"{s['detected']}/{s['total_ev']}", "within ±7 days", ACCENT),
+        kpi_card("target", "Flagged Days", f"{s['total_flags']:,}", "across all history", ACCENT2),
         kpi_card("clock", "Daily Flag Rate", f"{s['flag_rate']:.1f}%", "of scored trading days", MUTE),
     ])
 
@@ -499,22 +516,23 @@ def raw_table():
     cols = [{'name': c, 'id': c} for c in raw.columns]
     return dash_table.DataTable(
         data=raw.to_dict('records'), columns=cols, page_size=15,
-        style_table={'overflowX': 'auto', 'borderRadius': '12px',
-                     'border': '1px solid rgba(148,163,184,0.12)'},
-        style_header={'backgroundColor': '#131A25', 'color': '#8C97A8', 'fontWeight': '700',
-                      'border': '1px solid rgba(148,163,184,0.12)', 'fontFamily': 'JetBrains Mono',
-                      'fontSize': '10.5px', 'textTransform': 'uppercase', 'letterSpacing': '0.4px'},
-        style_cell={'backgroundColor': 'rgba(19,26,37,0.45)', 'color': '#CFD6E0',
-                    'border': '1px solid rgba(148,163,184,0.06)', 'fontFamily': 'JetBrains Mono',
-                    'fontSize': '11px', 'padding': '6px 10px', 'minWidth': '72px', 'textAlign': 'right'},
+        style_table={'overflowX': 'auto', 'borderRadius': '8px',
+                     'border': '1px solid rgba(255,255,255,0.08)'},
+        style_header={'backgroundColor': '#141820', 'color': '#8A94A3', 'fontWeight': '600',
+                      'border': '1px solid rgba(255,255,255,0.08)', 'fontFamily': 'JetBrains Mono',
+                      'fontSize': '11px', 'textTransform': 'uppercase', 'letterSpacing': '0.5px'},
+        style_cell={'backgroundColor': '#0A0C10', 'color': '#D1D5DB',
+                    'border': '1px solid rgba(255,255,255,0.04)', 'fontFamily': 'JetBrains Mono',
+                    'fontSize': '11.5px', 'padding': '8px 12px', 'minWidth': '72px', 'textAlign': 'right'},
         style_data_conditional=[{'if': {'filter_query': '{Flagged} eq 1'},
-                                 'backgroundColor': 'rgba(251,75,87,0.10)'}],
+                                 'backgroundColor': tint(DANGER, 0.10)}],
         style_cell_conditional=[{'if': {'column_id': 'Date'}, 'textAlign': 'left'}],
     )
 
 
 def section_label(text):
-    return html.Div(className='section-label', children=[html.Span(className='sq'), html.Span(text)])
+    return html.Div(className='section-label', children=[html.Span(text)])
+
 VIEWS = [
     ("overview", "Overview", "◈"),
     ("timeline", "Timeline", "∿"),
@@ -550,23 +568,45 @@ def hero_stat():
 # ─────────────────────────────────────────────────────────────────────────────
 app = Dash(__name__, suppress_callback_exceptions=True,
            title="Market Anomaly Detector")
-server = app.server   # <-- gunicorn entrypoint for Render
+server = app.server   
 
 def build_view(view_key):
-    if view_key == "overview" or view_key == "timeline":
+    # Dynamic Data Date Note
+    last_dt_str = DF.index[-1].strftime("%b %d, %Y") if DATA_OK else "Unknown"
+    date_note = html.Div(
+        f"Data as of {last_dt_str} · Accounts for standard 1-3 day market publisher lag.",
+        className='data-as-of'
+    )
+
+    if view_key == "overview":
         return html.Div([
+            hero_stat(),
             kpi_row_top(),
-            section_label("Anomaly Score Timeline"),
+            html.Div(className="section-header-block", children=[
+                section_label("Recent Anomaly Trend"),
+                date_note
+            ]),
+            dcc.Graph(id='overview-chart', figure=build_figure("Last 6 Months"),
+                      config={'displayModeBar': False}),
+        ])
+    
+    elif view_key == "timeline":
+        return html.Div([
+            html.Div(className="section-header-block", children=[
+                section_label("Full Anomaly Timeline"),
+                date_note
+            ]),
             html.Div(className='control', children=[
                 html.Label("Select time range", className='ctl-label'),
                 dcc.Dropdown(id='range-dd', className='dd',
                     options=[{'label': v, 'value': v} for v in
                              ["Last 6 Months", "Last 2 Years", "Full History (2005-Present)"]],
-                    value="Last 6 Months", clearable=False),
+                    value="Last 2 Years", clearable=False),
             ]),
-            dcc.Graph(id='anomaly-chart', figure=build_figure("Last 6 Months"),
+            dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years"),
                       config={'displayModeBar': False}),
         ])
+        
     elif view_key == "alerts":
         year_opts = [{'label': 'All Years', 'value': 'All Years'}] + \
             [{'label': str(y), 'value': str(y)} for y in AVAIL_YEARS]
@@ -583,13 +623,29 @@ def build_view(view_key):
                                  options=[{'label': 'All Months', 'value': 'All Months'}],
                                  value='All Months', clearable=False)]),
             ]),
-            dcc.Loading(type='circle', color=NEON, children=html.Div(id='cards-container')),
+            dcc.Loading(type='circle', color=ACCENT, children=html.Div(id='cards-container')),
         ])
+        
     elif view_key == "validation":
         return validation_section()
+        
     elif view_key == "raw":
-        return html.Div([section_label("Raw Data Explorer"), raw_table()])
+        return html.Div([
+            section_label("Raw Data Explorer"),
+            html.Div([
+                html.B("Data Dictionary: "),
+                "Table displays daily computed values. ",
+                html.B("Returns: "), "Daily logarithmic returns (levels for VIX). ",
+                html.B("Z-Scores: "), "63-day rolling z-scores. ",
+                html.B("Contribution %: "), "Proportion of the anomaly driven by the asset. ",
+                html.B("Threshold: "), "Causal expanding limit. ",
+                html.B("Flagged: "), "True if composite score exceeds threshold."
+            ], className='context-box'),
+            raw_table()
+        ])
+        
     return html.Div("View not found.")
+
 def header():
     return html.Div(className='top-header', children=[
         html.Div([
@@ -611,17 +667,13 @@ def build_layout():
                 html.Br(), html.Span(LOAD_ERR, style={'color': TXT_FAINT, 'fontSize': '12px'})]),
         ])
 
-    year_opts = [{'label': 'All Years', 'value': 'All Years'}] + \
-                [{'label': str(y), 'value': str(y)} for y in AVAIL_YEARS]
-
     return html.Div(className='shell', children=[
-    sidebar("overview"),
-    html.Div(className='content', children=[
-        header(),
-        hero_stat(),
-        html.Div(id='view-container', className='view', children=build_view("overview")),
-    ]),
-])
+        sidebar("overview"),
+        html.Div(className='content', children=[
+            header(),
+            html.Div(id='view-container', className='view', children=build_view("overview")),
+        ]),
+    ])
 
 
 app.layout = build_layout
