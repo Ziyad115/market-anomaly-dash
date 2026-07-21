@@ -388,7 +388,7 @@ def build_figure(view, current_color, lang):
                           annotation_yshift=y_offset,
                           annotation_font=dict(color="#A1A1AA", size=10))
 
-    font_fam = 'Thmanyah Sans, sans-serif' if lang == 'ar' else 'Inter, sans-serif'
+    font_fam = 'ThmanyahSans, sans-serif' if lang == 'ar' else 'Inter, sans-serif'
     
     fig.update_layout(height=360, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
                       font=dict(color='#A1A1AA', family=font_fam, size=12),
@@ -413,12 +413,14 @@ def build_contribution_chart(r_color, lang):
     contribs = dict(sorted(contribs.items(), key=lambda item: item[1]))
     colors = [r_color if i == len(contribs)-1 else 'rgba(255,255,255,0.12)' for i in range(len(contribs))]
 
+    font_fam = 'ThmanyahSans, sans-serif' if lang == 'ar' else 'Inter, sans-serif'
+    
     fig = go.Figure(go.Bar(
         x=list(contribs.values()), y=list(contribs.keys()), orientation='h',
         marker=dict(color=colors), text=[f"{v:.1f}%" for v in contribs.values()],
-        textposition='outside', textfont=dict(color='#A1A1AA', family='Inter', size=11)
+        textposition='outside', textfont=dict(color='#A1A1AA', family=font_fam, size=11)
     ))
-    font_fam = 'Thmanyah Sans, sans-serif' if lang == 'ar' else 'Inter, sans-serif'
+    
     fig.update_layout(
         margin=dict(l=0, r=30, t=0, b=0), height=140, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.04)', zeroline=False, showticklabels=False, range=[0, max(contribs.values()) * 1.25]),
@@ -719,7 +721,6 @@ app.index_string = '''<!DOCTYPE html>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@engdawood/thmanyah-font-web/index.css" />
     <link href="https://unpkg.com/aos@2.3.4/dist/aos.css" rel="stylesheet">
     {%css%}
 </head>
