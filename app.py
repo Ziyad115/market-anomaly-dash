@@ -131,7 +131,7 @@ TR = {
         'score_label': 'مؤشر شذوذ السوق', 'lang_btn': 'EN', 'toggle_sidebar': 'طي/توسيع القائمة',
         
         'january': 'يناير', 'february': 'فبراير', 'march': 'مارس', 'april': 'أبريل', 'may': 'مايو', 'june': 'يونيو',
-        'july': 'يوليو', 'august': 'أغسطس', 'september': 'سبتمبر', 'october': 'أكتوبر', 'november': 'نوفمبر', 'december': 'ديسمبر',
+        'july': 'يوليو', 'august': 'أغسطس', 'september': 'سبتمبر', 'october': 'أكتوبر', 'november': 'نوفمبر', 'ديسمبر': 'ديسمبر',
         
         'assets': {'S&P500': 'إس آند بي 500', 'Gold': 'الذهب', 'Oil_WTI': 'النفط', 'USD_Index': 'مؤشر الدولار', 'VIX': 'مؤشر التقلب (VIX)'},
         'ranges': {'Last 6 Months': 'آخر 6 أشهر', 'Last 2 Years': 'آخر سنتين', 'Full History (2005-Present)': 'التاريخ الكامل (2005-الآن)'},
@@ -152,11 +152,9 @@ TR = {
 }
 
 def t(key, lang='en'):
-    """Safe translation dictionary lookup."""
     return TR.get(lang, TR['en']).get(key, key)
 
 def trans(key):
-    """Returns a dual-language span component that switches instantly via CSS class."""
     return html.Span([
         html.Span(t(key, 'en'), className='lang-en'),
         html.Span(t(key, 'ar'), className='lang-ar')
@@ -194,7 +192,6 @@ def tint(hex_color, alpha):
 #  DATA LOGIC & ASYNC FETCHING
 # ─────────────────────────────────────────────────────────────────────────────
 def fetch_single_ticker(name, t_sym):
-    """Fetches a single ticker, handling fallback & exponential backoff."""
     try:
         from defeatbeta_api.data.ticker import Ticker as DBTicker
         dbt = DBTicker(t_sym)
@@ -218,12 +215,11 @@ def fetch_single_ticker(name, t_sym):
                 break
         except Exception:
             pass
-        time.sleep(0.5 * (2 ** attempt)) # Much shorter backoff to prevent UI lockup
+        time.sleep(0.5 * (2 ** attempt)) 
         
     return name, close if close is not None else pd.Series(dtype=float), "yfinance"
 
 def fetch_fg():
-    """Background fetcher for Fear & Greed."""
     if HAS_FG:
         try:
             FG_CACHE['data'] = fear_and_greed.get()
@@ -232,17 +228,13 @@ def fetch_fg():
             pass
 
 def load_data():
-    """Fetches all data concurrently to vastly reduce startup time."""
     global DATA_SOURCE  
     tickers = {'S&P500': '^GSPC', 'VIX': '^VIX', 'Gold': 'GC=F', 'Oil_WTI': 'CL=F', 'USD_Index': 'DX-Y.NYB'}
     data = {}
     sources = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
-        # Fire off F&G independently so network lag doesn't block the layout
         executor.submit(fetch_fg)
-        
-        # Concurrently fetch all price histories
         futures = {executor.submit(fetch_single_ticker, name, sym): name for name, sym in tickers.items()}
         for future in concurrent.futures.as_completed(futures):
             name, series, src = future.result()
@@ -332,6 +324,7 @@ VAL = VAL_IF = None
 AVAIL_YEARS = []
 SUMMARY = {}
 DATA_OK = False
+DATA_LOADING = False
 LOAD_ERR = ""
 TRADING_DAYS = 0
 LOADED_AT = "—"
@@ -343,15 +336,12 @@ _LOCAL_CACHE_TS = 0
 FG_CACHE = {'timestamp': None, 'data': None}
 
 def sync_state():
-    """Reads latest state from pickle file to bypass Gunicorn multi-worker isolation."""
     global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT, DATA_SOURCE, _LOCAL_CACHE_TS
-    if not os.path.exists(STATE_FILE):
-        return
+    if not os.path.exists(STATE_FILE): return
     mtime = os.path.getmtime(STATE_FILE)
     if mtime > _LOCAL_CACHE_TS:
         try:
-            with open(STATE_FILE, "rb") as f:
-                state = pickle.load(f)
+            with open(STATE_FILE, "rb") as f: state = pickle.load(f)
             DF = state.get('DF')
             DF_IF = state.get('DF_IF')
             VAL = state.get('VAL')
@@ -401,7 +391,6 @@ def init_data():
     DATA_OK = True
 
 def run_init_in_background():
-    # Prevent multiple Gunicorn workers from pounding the API simultaneously
     if os.path.exists(LOCK_FILE):
         print("[INIT] Lock file exists. Another worker is already fetching data.")
         return
@@ -431,7 +420,6 @@ def run_init_in_background():
         if os.path.exists(LOCK_FILE):
             os.remove(LOCK_FILE)
 
-# Kick off non-blocking background thread on boot
 if not os.environ.get("APP_SKIP_LOAD"):
     threading.Thread(target=run_init_in_background, daemon=True).start()
 
@@ -465,9 +453,18 @@ def dual_market_narrative(row):
         html.Span(generate('ar'), className='lang-ar')
     ])
 
+def get_empty_fig(height=140):
+    return go.Figure(layout=dict(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=height, xaxis=dict(visible=False), yaxis=dict(visible=False)))
+
 def build_figure(view, current_color, lang='en'):
-    # Default to English structure, clientside JS will instantly translate strings
-    plot_df = DF.tail(126) if view == "Last 6 Months" else (DF.tail(504).resample("W").last() if view == "Last 2 Years" else DF.resample("W").last())
+    if view == "Last 6 Months" or view == t('ranges', lang).get("Last 6 Months"):
+        plot_df = DF.tail(126)
+    elif view == "Last 2 Years" or view == t('ranges', lang).get("Last 2 Years"):
+        plot_df = DF.tail(504).resample("W").last()
+    else:
+        # Aggressive downsample for 20+ years history to prevent giant payload
+        plot_df = DF.resample("ME").last()
+
     y_top = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) * 1.15
     fig = go.Figure()
 
@@ -489,24 +486,25 @@ def build_figure(view, current_color, lang='en'):
                              marker=dict(color=DANGER, size=6, line=dict(color='#000000', width=1)),
                              hovertemplate='⚠ Flagged Day<br>Score: <b>%{y:.2f}</b><extra></extra>', name=t('anomaly', lang)))
 
-    # Loop over all historical events, with alternating vertical offsets to prevent overlapping
     for i, (date_str, label_key) in enumerate(sorted(HISTORICAL_EVENTS.items())):
         dt = pd.to_datetime(date_str)
         if dt >= plot_df.index.min() and dt <= plot_df.index.max():
             label = t(label_key, lang)
             y_offset = -(i % 3) * 16 
             fig.add_vline(x=dt, line_width=1, line_dash="dash", line_color="rgba(255,255,255,0.15)",
-                          annotation_text=label, annotation_position="top left", 
+                          annotation_text=label, annotation_position="top right" if lang == 'ar' else "top left", 
                           annotation_yshift=y_offset,
                           annotation_font=dict(color="#A1A1AA", size=10))
 
+    font_fam = 'ThmanyahSans, sans-serif' if lang == 'ar' else 'Inter, sans-serif'
+    
     fig.update_layout(height=360, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                      font=dict(color='#A1A1AA', family='Inter, sans-serif', size=12),
+                      font=dict(color='#A1A1AA', family=font_fam, size=12),
                       legend=dict(orientation='h', y=1.12, x=1, xanchor='right', bgcolor='rgba(0,0,0,0)',
                                   font=dict(size=12, color='#A1A1AA')),
                       margin=dict(l=0, r=0, t=30, b=0), hovermode='x unified',
                       hoverlabel=dict(bgcolor='#18181B', bordercolor='rgba(255,255,255,0.1)',
-                                      font=dict(family='Inter, sans-serif', size=13, color='#FAFAFA')))
+                                      font=dict(family=font_fam, size=13, color='#FAFAFA')))
     
     fig.update_xaxes(showgrid=False, showline=True, linecolor='rgba(255,255,255,0.1)', zeroline=False,
                      showspikes=True, spikemode='across', spikecolor='rgba(255,255,255,0.15)',
@@ -523,16 +521,19 @@ def build_contribution_chart(r_color, lang='en'):
     contribs = dict(sorted(contribs.items(), key=lambda item: item[1]))
     colors = [r_color if i == len(contribs)-1 else 'rgba(255,255,255,0.12)' for i in range(len(contribs))]
 
+    font_fam = 'ThmanyahSans, sans-serif' if lang == 'ar' else 'Inter, sans-serif'
+    
     fig = go.Figure(go.Bar(
         x=list(contribs.values()), y=list(contribs.keys()), orientation='h',
         marker=dict(color=colors), text=[f"{v:.1f}%" for v in contribs.values()],
-        textposition='outside', textfont=dict(color='#A1A1AA', family='Inter, sans-serif', size=11)
+        textposition='outside', textfont=dict(color='#A1A1AA', family=font_fam, size=11)
     ))
+    
     fig.update_layout(
         margin=dict(l=0, r=30, t=0, b=0), height=140, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.04)', zeroline=False, showticklabels=False, range=[0, max(contribs.values()) * 1.25]),
         yaxis=dict(showgrid=False, tickfont=dict(color='#E4E4E7', size=11)),
-        font=dict(family='Inter, sans-serif'), hovermode=False
+        font=dict(family=font_fam), hovermode=False
     )
     return fig
 
@@ -553,14 +554,12 @@ def fear_greed_kpi():
     fg_color = MUTE
     desc_comp = trans('unavailable')
     
-    # Read instantly from cached value prepared in init_data() 
     if HAS_FG:
         if FG_CACHE.get('data'):
             fg = FG_CACHE['data']
             fg_val_str = f"{fg.value:.0f}"
             desc_low = fg.description.lower()
             
-            # Map exact english returns to TR keys
             if "extreme fear" in desc_low: fg_key, fg_color = 'fg_ext_fear', DANGER
             elif "extreme greed" in desc_low: fg_key, fg_color = 'fg_ext_greed', POS
             elif "fear" in desc_low: fg_key, fg_color = 'fg_fear', DANGER
@@ -579,14 +578,13 @@ def hero_section():
     latest = DF.iloc[-1]
     score, thresh = latest['Anomaly_Score'], latest['Threshold']
     
-    _, r_color = get_market_status(score, thresh, 'en') # Color is independent of lang
+    _, r_color = get_market_status(score, thresh, 'en') 
     gap = score - thresh
     up = gap >= 0
     delta_class = 'delta up' if up else 'delta down'
     delta_val = f"{'▲' if up else '▼'} {abs(gap):.2f} "
     conf_score = "99.8%" 
     
-    # Dual-language dynamic spans
     status_span = html.Span([html.Span(get_market_status(score, thresh, 'en')[0], className='lang-en'), html.Span(get_market_status(score, thresh, 'ar')[0], className='lang-ar')])
     
     return html.Div(className='hero-panel glass-card', **{'data-aos': 'fade-up'}, children=[
@@ -858,7 +856,6 @@ app.index_string = '''<!DOCTYPE html>
 </html>'''
 
 def serve_layout():
-    # Attempt to load state in case a different Gunicorn worker updated the cache
     sync_state()
     
     # If loading in background, serve instantly-rendered skeleton loader
@@ -874,13 +871,14 @@ def serve_layout():
         )
 
     if not DATA_OK:
-        return html.Div(className='error-screen', children=[html.H1("Service Unavailable"), html.P("Market data failed to load."), html.Code(LOAD_ERR)])
+        return html.Div(className='error-screen', children=[html.H1("Service Unavailable"), html.P("Market data failed to load. See server logs for details."), html.Code(LOAD_ERR)])
 
     view_nodes = []
     for key in VIEWS:
         view_nodes.append(html.Div(build_view(key), className='view', **{'data-view': key}, style={'display': 'block' if key == 'overview' else 'none'}))
 
     return html.Div(id='root-container', className='app-container lang-en', dir='ltr', children=[
+        dcc.Interval(id='render-interval', interval=200, max_intervals=1),
         dcc.Store(id='tr-store', data=TR),
         dcc.Store(id='nav-dummy'), dcc.Store(id='collapse-dummy'),
         sidebar(),
@@ -909,7 +907,7 @@ def build_view(view_key):
         row_2 = html.Div(className='fintech-grid layout-row-2', children=[
             html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('drivers_today'), className='card-title'),
-                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=build_contribution_chart(r_color, 'en'), config={'displayModeBar': False})])
+                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=get_empty_fig(), config={'displayModeBar': False})])
             ]),
             html.Div(className='glass-card flex-col', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('market_narrative'), className='card-title'),
@@ -937,7 +935,7 @@ def build_view(view_key):
                                  {'label': html.Span([html.Span("Full History (2005-Present)", className='lang-en'), html.Span("التاريخ الكامل (2005-الآن)", className='lang-ar')]), 'value': "Full History (2005-Present)"}],
                         value="Last 2 Years"),
                 ]),
-                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT, 'en'), config={'displayModeBar': False})]),
+                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=get_empty_fig(360), config={'displayModeBar': False})]),
             ])
         ])
 
@@ -980,11 +978,9 @@ app.layout = serve_layout
 @callback(Output('boot-trigger', 'children'), Input('boot-interval', 'n_intervals'))
 def check_boot_state(n):
     sync_state()
-    print(f"[POLL] DATA_OK: {DATA_OK}, Error: {LOAD_ERR}, Lock exists: {os.path.exists(LOCK_FILE)}")
-    if DATA_OK:
-        return "READY"
-    if LOAD_ERR or not os.path.exists(LOCK_FILE):
-        return "ERROR"
+    print(f"[POLL] DATA_OK: {DATA_OK}, Lock exists: {os.path.exists(LOCK_FILE)}")
+    if DATA_OK: return "READY"
+    if LOAD_ERR or not os.path.exists(LOCK_FILE): return "ERROR"
     return "LOADING"
 
 app.clientside_callback(
@@ -997,8 +993,26 @@ app.clientside_callback(
     Output('boot-interval', 'disabled'), Input('boot-trigger', 'children'), prevent_initial_call=True
 )
 
+@callback(
+    Output('contrib-chart', 'figure'),
+    Output('anomaly-chart', 'figure', allow_duplicate=True),
+    Input('render-interval', 'n_intervals'),
+    State('range-dd', 'value'),
+    State('root-container', 'className'),
+    prevent_initial_call=True
+)
+def load_deferred_charts(n, range_val, current_class):
+    if not DATA_OK: return no_update, no_update
+    lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
+    latest = DF.iloc[-1]
+    _, r_color = get_market_status(latest['Anomaly_Score'], latest['Threshold'], lang)
+    
+    contrib_fig = build_contribution_chart(r_color, lang)
+    timeline_fig = build_figure(range_val or "Last 2 Years", ACCENT, lang)
+    return contrib_fig, timeline_fig
+
 @callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
-def update_chart(view, current_class):
+def update_timeline_chart(view, current_class):
     if not DATA_OK: return no_update
     lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
     return build_figure(view or "Last 6 Months", ACCENT, lang)
@@ -1033,14 +1047,13 @@ def load_news(n_clicks, btn_id):
 app.clientside_callback(
     """
     function(n_clicks, tr_data, current_class, fig_over, fig_time, fig_contrib) {
-        // Protect against execution before the DOM layout initializes
         if (!n_clicks || !document.querySelector('.app-container')) return window.dash_clientside.no_update;
         
+        console.time('plotly-lang-render');
         const new_lang = current_class.includes('lang-en') ? 'ar' : 'en';
         const is_ar = new_lang === 'ar';
         const TR = tr_data[new_lang];
         
-        // Deep copy figures to avoid reference mutation errors in Dash
         let f1 = fig_over ? JSON.parse(JSON.stringify(fig_over)) : null;
         let f2 = fig_time ? JSON.parse(JSON.stringify(fig_time)) : null;
         let f3 = fig_contrib ? JSON.parse(JSON.stringify(fig_contrib)) : null;
@@ -1074,7 +1087,7 @@ app.clientside_callback(
         function trans_contrib(fig) {
             if(!fig || !fig.y) return;
             const font = is_ar ? 'ThmanyahSans, sans-serif' : 'Inter, sans-serif';
-            fig.layout.font.family = font;
+            if(fig.layout) fig.layout.font.family = font;
             fig.y = fig.y.map(asset => {
                 for(let k in tr_data['en']['assets']) {
                     if(asset === tr_data['en']['assets'][k] || asset === tr_data['ar']['assets'][k]) {
@@ -1090,11 +1103,12 @@ app.clientside_callback(
         const dir = is_ar ? 'rtl' : 'ltr';
         const cls = 'app-container lang-' + new_lang + (is_ar ? ' font-ar' : '');
         
+        console.timeEnd('plotly-lang-render');
         return [dir, cls, f1, f2, f3];
     }
     """,
     Output('root-container', 'dir'), Output('root-container', 'className'),
-    Output('overview-chart', 'figure'), Output('anomaly-chart', 'figure', allow_duplicate=True), Output('contrib-chart', 'figure'),
+    Output('overview-chart', 'figure'), Output('anomaly-chart', 'figure'), Output('contrib-chart', 'figure'),
     Input('lang-toggle', 'n_clicks'),
     State('tr-store', 'data'), State('root-container', 'className'),
     State('overview-chart', 'figure'), State('anomaly-chart', 'figure'), State('contrib-chart', 'figure'),
