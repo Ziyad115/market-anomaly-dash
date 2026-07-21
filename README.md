@@ -13,7 +13,7 @@ A live financial dashboard that detects statistical anomalies across five major 
 - Python, Dash, Plotly, Pandas, scikit-learn, yfinance
 
 ## Live Demo
-[Add your deployed link here once live]
+[https://market-anomaly-dash.onrender.com]
 
 ## Running Locally
 \`\`\`
