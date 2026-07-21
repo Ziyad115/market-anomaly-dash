@@ -69,10 +69,10 @@ svg { display: block; }
 .sidebar-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; transition: all 0.3s var(--ease); width: 100%; }
 .brand-logo { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 15px; letter-spacing: -0.02em; width: 100%; transition: all 0.3s var(--ease); }
 
-.logo-left { display: flex; align-items: center; transition: gap 0.3s var(--ease); }
+.logo-left { display: flex; align-items: center; gap: 10px; transition: gap 0.3s var(--ease); }
 .logo-wordmark { height: 22px; width: auto; object-fit: contain; flex-shrink: 0 !important; transition: opacity 0.15s ease-out, max-width 0.3s var(--ease); max-width: 200px; opacity: 1; }
 
-.collapse-btn { background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; transition: background 0.2s var(--ease), color 0.2s var(--ease); }
+.collapse-btn { background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; transition: background 0.2s var(--ease), color 0.2s var(--ease); margin-top: 8px; }
 .collapse-btn:hover { background: var(--glass-hover); color: var(--text-primary); }
 .collapse-btn * { pointer-events: none; } /* Prevents SVG icon from swallowing clicks */
 
@@ -239,7 +239,6 @@ svg { display: block; }
 /* Animations & Fallbacks */
 .view-fade-in { animation: fadeIn 0.3s var(--ease) forwards; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.no-aos [data-aos] { opacity: 1 !important; transform: none !important; }
 .view { width: 100%; }
 .ico-fallback { background: currentColor; opacity: 0.25; border-radius: 3px; }
 
