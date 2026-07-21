@@ -414,7 +414,6 @@ def hero_section():
     regime, r_color = get_market_regime(score, thresh)
     gap = score - thresh
     up = gap >= 0
-    delta_class = 'delta up' if up else 'delta down'
     delta_text = f"{'▲' if up else '▼'} {abs(gap):.2f} vs Threshold"
     
     # Fake confidence score based on data completeness
@@ -425,13 +424,13 @@ def hero_section():
             html.Span("Market Anomaly Score", className='hero-title'),
             html.Div(className='hero-badges', children=[
                 html.Span(f"Confidence: {conf_score}", className='badge outline'),
-                html.Span(f"Regime: {regime}", className='badge solid', style={'backgroundColor': tint(r_color, 0.15), 'color': r_color, 'borderColor': tint(r_color, 0.3)})
+                html.Span(f"Status: {regime}", className='badge solid', style={'backgroundColor': tint(r_color, 0.15), 'color': r_color, 'borderColor': tint(r_color, 0.3)})
             ])
         ]),
         html.Div(className='hero-body', children=[
-            html.Div(f"{score:.2f}", className='hero-score gradient-text'),
+            html.Div(f"{score:.2f}", className='hero-score', style={'color': r_color, 'textShadow': f'0 0 32px {tint(r_color, 0.3)}'}),
             html.Div(className='hero-metrics', children=[
-                html.Span(delta_text, className=delta_class),
+                html.Span(delta_text, className='delta', style={'color': r_color, 'backgroundColor': tint(r_color, 0.1)}),
                 html.Span(f"Last updated: {SUMMARY['updated']}", className='hero-timestamp')
             ])
         ])
@@ -598,16 +597,12 @@ VIEWS = [("overview", "Overview"), ("timeline", "Timeline"), ("alerts", "Alerts"
 # ─────────────────────────────────────────────────────────────────────────────
 def data_status_indicator():
     ok = DATA_OK and DF is not None
-    days = f"{TRADING_DAYS:,}" if ok else "—"
     dot = POS if ok else DANGER
+    text = "Live Data" if ok else "Data Error"
+    
     return html.Div(className='status-indicator', children=[
         html.Span(className='status-dot', style={'background': dot, 'boxShadow': f'0 0 10px {dot}'}),
-        icon('lucide:database', 14, ACCENT2),
-        html.Span(DATA_SOURCE, className='status-src'),
-        html.Span("·", className='status-sep'),
-        html.Span(f"{days} days", className='status-days'),
-        html.Span("·", className='status-sep'),
-        html.Span(SUMMARY.get('updated', '—'), className='status-time'),
+        html.Span(text, className='status-src')
     ])
 
 
@@ -790,19 +785,10 @@ def build_view(view_key):
     if view_key == "overview":
         latest = DF.iloc[-1]
         score, thresh = latest['Anomaly_Score'], latest['Threshold']
-        regime, r_color = get_market_regime(score, thresh)
-
-        row_1 = html.Div(className='fintech-grid layout-row-1', children=[
-            html.Div(className='glass-card col-span-2', **{'data-aos': 'fade-up'}, children=[
-                html.Div("Systemic Stress Timeline", className='card-title'),
-                dcc.Graph(id='overview-chart', figure=build_figure("Last 6 Months"), config={'displayModeBar': False})
-            ]),
-            html.Div(className='glass-card flex-col center-content', **{'data-aos': 'fade-up'}, children=[
-                html.Div("Current Regime", className='card-title'),
-                html.Div(regime, className='regime-display gradient-text',
-                         style={'backgroundImage': f'linear-gradient(135deg, #FFFFFF, {r_color})'}),
-                html.Div(f"Threshold limit: {thresh:.2f}", className='kpi-sub mt-2')
-            ])
+        
+        row_1 = html.Div(className='glass-card', style={'marginBottom': '24px'}, **{'data-aos': 'fade-up'}, children=[
+            html.Div("Systemic Stress Timeline", className='card-title'),
+            dcc.Graph(id='overview-chart', figure=build_figure("Last 6 Months"), config={'displayModeBar': False})
         ])
 
         row_2 = html.Div(className='fintech-grid layout-row-2', children=[
@@ -841,7 +827,7 @@ def build_view(view_key):
         return html.Div(className='view-fade-in', children=[
             html.H2("Anomaly Alerts", className='section-title'),
             html.Div(className='fintech-grid mb-4', **{'data-aos': 'fade-up'},
-                     style={'gridTemplateColumns': '1fr 1fr'}, children=[
+                     style={'gridTemplateColumns': '1fr 1fr', 'zIndex': '2'}, children=[
                 dcc.Dropdown(id='year-dd', className='fintech-dd', options=year_opts, value='All Years', clearable=False),
                 dcc.Dropdown(id='month-dd', className='fintech-dd', options=[{'label': 'All Months', 'value': 'All Months'}], value='All Months', clearable=False),
             ]),
@@ -960,11 +946,13 @@ app.clientside_callback(
 
 app.clientside_callback(
     """
-    function(n) {
+    function(n_clicks) {
+        if (!n_clicks) return window.dash_clientside.no_update;
         var el = document.querySelector('.app-container');
         if (el) { el.classList.toggle('collapsed'); }
-        window.dispatchEvent(new Event('resize'));
-        return '';
+        // Delayed resize event so Plotly graphs re-scale *after* CSS width transition finishes
+        setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 250);
+        return window.dash_clientside.no_update;
     }
     """,
     Output('collapse-dummy', 'data'),
