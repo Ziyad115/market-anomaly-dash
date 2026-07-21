@@ -2,6 +2,8 @@ import os
 import urllib.parse
 import xml.etree.ElementTree as ET
 import json
+import threading
+import concurrent.futures
 from datetime import datetime, timedelta
 from functools import lru_cache
 
@@ -186,45 +188,65 @@ def tint(hex_color, alpha):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  DATA LOGIC
+#  DATA LOGIC & ASYNC FETCHING
 # ─────────────────────────────────────────────────────────────────────────────
-import time
-
-def load_data():
-    global DATA_SOURCE  
-    tickers = {'S&P500': '^GSPC', 'VIX': '^VIX', 'Gold': 'GC=F', 'Oil_WTI': 'CL=F', 'USD_Index': 'DX-Y.NYB'}
-    data = {}
+def fetch_single_ticker(name, t_sym):
+    """Fetches a single ticker, handling fallback & exponential backoff."""
     try:
         from defeatbeta_api.data.ticker import Ticker as DBTicker
-        for name, t_sym in tickers.items():
-            dbt = DBTicker(t_sym)
-            price_df = dbt.price()
-            price_df['report_date'] = pd.to_datetime(price_df['report_date'])
-            price_df = price_df.set_index('report_date').sort_index()
-            price_df = price_df[price_df.index >= '2005-01-01']
-            data[name] = price_df['close']
-        df = pd.DataFrame(data).dropna()
-        if len(df) > 0:
-            DATA_SOURCE = "defeatbeta-api"
-            return df
+        dbt = DBTicker(t_sym)
+        price_df = dbt.price()
+        price_df['report_date'] = pd.to_datetime(price_df['report_date'])
+        price_df = price_df.set_index('report_date').sort_index()
+        price_df = price_df[price_df.index >= '2005-01-01']
+        if len(price_df) > 0:
+            return name, price_df['close'], "defeatbeta-api"
     except Exception:
         pass
 
-    for name, t_sym in tickers.items():
-        close = None
-        for attempt in range(4):
-            try:
-                d = yf.download(t_sym, start='2005-01-01', progress=False)
-                c = d['Close']
-                if isinstance(c, pd.DataFrame): c = c.iloc[:, 0]
-                if len(c) > 0:
-                    close = c
-                    break
-            except Exception: pass
-            time.sleep(2 ** attempt)  
-        data[name] = close if close is not None else pd.Series(dtype=float)
+    close = None
+    for attempt in range(4):
+        try:
+            d = yf.download(t_sym, start='2005-01-01', progress=False)
+            c = d['Close']
+            if isinstance(c, pd.DataFrame): c = c.iloc[:, 0]
+            if len(c) > 0:
+                close = c
+                break
+        except Exception:
+            pass
+        time.sleep(0.5 * (2 ** attempt)) # Much shorter backoff to prevent UI lockup
+        
+    return name, close if close is not None else pd.Series(dtype=float), "yfinance"
 
-    DATA_SOURCE = "yfinance"
+def fetch_fg():
+    """Background fetcher for Fear & Greed."""
+    if HAS_FG:
+        try:
+            FG_CACHE['data'] = fear_and_greed.get()
+            FG_CACHE['timestamp'] = datetime.now()
+        except Exception:
+            pass
+
+def load_data():
+    """Fetches all data concurrently to vastly reduce startup time."""
+    global DATA_SOURCE  
+    tickers = {'S&P500': '^GSPC', 'VIX': '^VIX', 'Gold': 'GC=F', 'Oil_WTI': 'CL=F', 'USD_Index': 'DX-Y.NYB'}
+    data = {}
+    sources = []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        # Fire off F&G independently so network lag doesn't block the layout
+        executor.submit(fetch_fg)
+        
+        # Concurrently fetch all price histories
+        futures = {executor.submit(fetch_single_ticker, name, sym): name for name, sym in tickers.items()}
+        for future in concurrent.futures.as_completed(futures):
+            name, series, src = future.result()
+            data[name] = series
+            sources.append(src)
+
+    DATA_SOURCE = "defeatbeta-api" if "defeatbeta-api" in sources else "yfinance"
     return pd.DataFrame(data).dropna()
 
 def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
@@ -300,30 +322,22 @@ def get_news_for_date(date_str, days_window=1):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  STARTUP & GLOBAL CACHE
+#  STARTUP & ASYNC CACHE
 # ─────────────────────────────────────────────────────────────────────────────
 DF = DF_IF = None
 VAL = VAL_IF = None
 AVAIL_YEARS = []
 SUMMARY = {}
 DATA_OK = False
+DATA_LOADING = False
 LOAD_ERR = ""
-DATA_SOURCE = "unknown"
 TRADING_DAYS = 0
 LOADED_AT = "—"
-FG_CACHE = {'timestamp': None, 'data': None} # Cached globally to prevent blocking render
+FG_CACHE = {'timestamp': None, 'data': None}
 
 def init_data():
-    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT, FG_CACHE
-    
-    # Pre-fetch Fear & Greed once on boot to prevent 20s UI blocking
-    if HAS_FG:
-        try:
-            FG_CACHE['data'] = fear_and_greed.get()
-            FG_CACHE['timestamp'] = datetime.now()
-        except Exception:
-            pass
-            
+    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT
+
     prices = load_data()
     DF = compute_anomaly(prices)
     VAL = validate_events(DF, HISTORICAL_EVENTS, 'Flagged')
@@ -354,12 +368,20 @@ def init_data():
     LOADED_AT = datetime.now().strftime("%d %b %Y · %H:%M:%S")
     DATA_OK = True
 
-if not os.environ.get("APP_SKIP_LOAD"):
+def run_init_in_background():
+    global DATA_LOADING, DATA_OK, LOAD_ERR
+    DATA_LOADING = True
     try:
         init_data()
     except Exception as e:
         DATA_OK = False
         LOAD_ERR = str(e)
+    finally:
+        DATA_LOADING = False
+
+# Kick off non-blocking background thread on boot
+if not os.environ.get("APP_SKIP_LOAD"):
+    threading.Thread(target=run_init_in_background, daemon=True).start()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -479,7 +501,6 @@ def fear_greed_kpi():
     fg_color = MUTE
     desc_comp = trans('unavailable')
     
-    # Read instantly from cached value prepared in init_data() to prevent 20s UI blocking
     if HAS_FG:
         if FG_CACHE.get('data'):
             fg = FG_CACHE['data']
@@ -737,8 +758,7 @@ def sidebar():
             html.Div(className='nav-extra', children=[
                 html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
             ]),
-        ]),
-        html.Div(className='sidebar-foot'), # Empty container to satisfy layout expectations without holding the Live Pill
+        ])
     ])
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -759,6 +779,7 @@ app.index_string = '''<!DOCTYPE html>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link href="https://unpkg.com/aos@2.3.4/dist/aos.css" rel="stylesheet">
     {%css%}
+    <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
 </head>
 <body>
     {%app_entry%}
@@ -782,6 +803,41 @@ app.index_string = '''<!DOCTYPE html>
     </footer>
 </body>
 </html>'''
+
+def serve_layout():
+    # If currently loading in background, serve instantly-rendered skeleton loader
+    if DATA_LOADING and not DATA_OK:
+        return html.Div(
+            style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'justifyContent': 'center', 'height': '100vh', 'backgroundColor': '#0A0A0A', 'fontFamily': 'Inter, sans-serif'},
+            children=[
+                dcc.Interval(id='boot-interval', interval=1000, n_intervals=0),
+                html.Div(id='boot-trigger', style={'display': 'none'}),
+                html.Div(style={'width': '40px', 'height': '40px', 'border': '3px solid rgba(255,255,255,0.1)', 'borderTopColor': POS, 'borderRadius': '50%', 'animation': 'spin 1s linear infinite', 'marginBottom': '20px'}),
+                html.H2("Initializing Market Intelligence...", style={'fontSize': '15px', 'fontWeight': '500', 'letterSpacing': '0.05em', 'color': ACCENT2})
+            ]
+        )
+
+    if not DATA_OK:
+        return html.Div(className='error-screen', children=[html.H1("Service Unavailable"), html.P("Market data failed to load."), html.Code(LOAD_ERR)])
+
+    view_nodes = []
+    for key in VIEWS:
+        view_nodes.append(html.Div(build_view(key), className='view', **{'data-view': key}, style={'display': 'block' if key == 'overview' else 'none'}))
+
+    return html.Div(id='root-container', className='app-container lang-en', dir='ltr', children=[
+        dcc.Store(id='tr-store', data=TR),
+        dcc.Store(id='nav-dummy'), dcc.Store(id='collapse-dummy'),
+        sidebar(),
+        html.Div(className='main-content', children=[
+            html.Div(className='top-nav', children=[
+                html.Div(className='status-indicator', children=[
+                    html.Span(className='status-dot', style={'background': POS, 'boxShadow': f'0 0 10px {POS}'}),
+                    html.Span(trans('live_data'), className='status-src')
+                ])
+            ]),
+            html.Div(view_nodes, id='views-wrap'),
+        ]),
+    ])
 
 def build_view(view_key):
     if view_key == "overview":
@@ -858,37 +914,29 @@ def build_view(view_key):
 
     return html.Div("View not found.")
 
-def build_layout():
-    if not DATA_OK:
-        return html.Div(className='error-screen', children=[html.H1("Service Unavailable"), html.P("Market data failed to load."), html.Code(LOAD_ERR)])
-
-    view_nodes = []
-    for key in VIEWS:
-        view_nodes.append(html.Div(build_view(key), className='view', **{'data-view': key}, style={'display': 'block' if key == 'overview' else 'none'}))
-
-    ok = DATA_OK and DF is not None
-    return html.Div(id='root-container', className='app-container lang-en', dir='ltr', children=[
-        dcc.Store(id='tr-store', data=TR),
-        dcc.Store(id='nav-dummy'), dcc.Store(id='collapse-dummy'),
-        sidebar(),
-        html.Div(className='main-content', children=[
-            html.Div(className='top-nav', children=[
-                html.Div(className='status-indicator', children=[
-                    html.Span(className='status-dot', style={'background': POS if ok else DANGER, 'boxShadow': f'0 0 10px {POS if ok else DANGER}'}),
-                    html.Span(trans('live_data' if ok else 'data_error'), className='status-src')
-                ])
-            ]),
-            html.Div(view_nodes, id='views-wrap'),
-        ]),
-    ])
-
-app.layout = build_layout
+app.layout = serve_layout
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  CALLBACKS
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Allow duplicate outputs safely. Prevent initial call avoids the race condition
+# Polling callback for background boot status
+@callback(Output('boot-trigger', 'children'), Input('boot-interval', 'n_intervals'))
+def check_boot_state(n):
+    if DATA_OK or (not DATA_LOADING and not DATA_OK):
+        return "READY"
+    return "LOADING"
+
+app.clientside_callback(
+    """
+    function(status) {
+        if (status === "READY") { window.location.reload(true); }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output('boot-interval', 'disabled'), Input('boot-trigger', 'children'), prevent_initial_call=True
+)
+
 @callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
 def update_chart(view, current_class):
     if not DATA_OK: return no_update
@@ -925,14 +973,12 @@ def load_news(n_clicks, btn_id):
 app.clientside_callback(
     """
     function(n_clicks, tr_data, current_class, fig_over, fig_time, fig_contrib) {
-        // Protect against execution before the DOM layout initializes
         if (!n_clicks || !document.querySelector('.app-container')) return window.dash_clientside.no_update;
         
         const new_lang = current_class.includes('lang-en') ? 'ar' : 'en';
         const is_ar = new_lang === 'ar';
         const TR = tr_data[new_lang];
         
-        // Deep copy figures to avoid reference mutation errors in Dash
         let f1 = fig_over ? JSON.parse(JSON.stringify(fig_over)) : null;
         let f2 = fig_time ? JSON.parse(JSON.stringify(fig_time)) : null;
         let f3 = fig_contrib ? JSON.parse(JSON.stringify(fig_contrib)) : null;
@@ -985,17 +1031,11 @@ app.clientside_callback(
         return [dir, cls, f1, f2, f3];
     }
     """,
-    Output('root-container', 'dir'),
-    Output('root-container', 'className'),
-    Output('overview-chart', 'figure'),
-    Output('anomaly-chart', 'figure', allow_duplicate=True),
-    Output('contrib-chart', 'figure'),
+    Output('root-container', 'dir'), Output('root-container', 'className'),
+    Output('overview-chart', 'figure'), Output('anomaly-chart', 'figure', allow_duplicate=True), Output('contrib-chart', 'figure'),
     Input('lang-toggle', 'n_clicks'),
-    State('tr-store', 'data'),
-    State('root-container', 'className'),
-    State('overview-chart', 'figure'),
-    State('anomaly-chart', 'figure'),
-    State('contrib-chart', 'figure'),
+    State('tr-store', 'data'), State('root-container', 'className'),
+    State('overview-chart', 'figure'), State('anomaly-chart', 'figure'), State('contrib-chart', 'figure'),
     prevent_initial_call=True
 )
 
