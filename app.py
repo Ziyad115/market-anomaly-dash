@@ -63,16 +63,15 @@ ICO = {
 }
 
 HISTORICAL_EVENTS = {
-    "2008-09-15": "Lehman Brothers files for bankruptcy, triggering global financial crisis.",
-    "2008-10-13": "Global stock markets rally after coordinated bank bailout announcements.",
-    "2008-11-20": "S&P 500 hits multi-year lows amid deepening recession fears.",
-    "2009-03-09": "S&P 500 bottoms out during the Global Financial Crisis.",
-    "2010-05-06": "Flash Crash: Dow Jones drops ~1000 points in minutes.",
-    "2011-08-08": "US credit rating downgraded by S&P, sparking global selloff.",
-    "2015-08-24": "China devaluation fears trigger global market selloff ('Black Monday').",
-    "2020-02-24": "COVID-19 fears trigger global market selloff as cases spread outside China.",
-    "2020-03-16": "Circuit breakers halt trading as COVID-19 panic selling accelerates.",
-    "2022-06-13": "S&P 500 enters bear market amid rate hike and inflation fears.",
+    "2008-09-15": "Lehman Brothers bankruptcy",
+    "2010-05-06": "Flash Crash",
+    "2011-08-08": "US credit downgrade",
+    "2015-08-24": "China devaluation (Black Monday)",
+    "2020-02-24": "COVID-19 market crash",
+    "2020-03-16": "COVID-19 circuit breakers",
+    "2022-06-13": "S&P 500 bear market",
+    "2022-02-24": "Ukraine Invasion",
+    "2023-03-10": "SVB Collapse",
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -281,12 +280,12 @@ def generate_market_narrative(row):
     contribs = {s: row.get(f'{s}_Contribution', 0) for s in SIGNALS}
     top_asset = max(contribs, key=lambda s: contribs[s] if pd.notna(contribs[s]) else -1)
     pct = contribs[top_asset]
-    regime, _ = get_market_regime(score, thresh)
+    status_label, _ = get_market_regime(score, thresh)
     
     if score < thresh:
-        return f"Composite stress remains below the structural threshold. Market status is classified as {regime}. {DISPLAY[top_asset]} and volatility are currently the largest contributors to the background score. No broad-based systemic stress or anomalous behavior is detected."
+        return f"Markets look calm today — no unusual stress detected. The current status is {status_label}. Normal background activity is mainly driven by {DISPLAY[top_asset]}."
     else:
-        return f"Warning: Composite stress has breached the expanding threshold. Market status is currently classified as {regime}. The anomaly is heavily driven by {DISPLAY[top_asset]}, accounting for {pct:.0f}% of the divergence. Monitor closely for cross-asset contagion."
+        return f"Caution: Market stress is unusually high right now. The current status is {status_label}, primarily driven by sudden moves in {DISPLAY[top_asset]} ({pct:.0f}% of the activity). Keep an eye on conditions."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -324,18 +323,15 @@ def build_figure(view, current_color=ACCENT):
                              marker=dict(color=DANGER, size=6, line=dict(color='#000000', width=1)),
                              hovertemplate='⚠ Flagged Day<br>Score: <b>%{y:.2f}</b><extra></extra>', name='Anomaly'))
 
-    # Annotations for historical context
-    events_to_plot = {
-        "2020-02-24": "COVID Crash",
-        "2022-02-24": "Ukraine Inv.",
-        "2023-03-10": "SVB Collapse"
-    }
-    
-    for date_str, label in events_to_plot.items():
+    # Dynamic Historical Event Annotations with Staggering
+    for i, (date_str, label) in enumerate(sorted(HISTORICAL_EVENTS.items())):
         dt = pd.to_datetime(date_str)
         if dt >= plot_df.index.min() and dt <= plot_df.index.max():
+            # Stagger vertical position offsets: 0, -16, -32 to cleanly separate overlapping labels
+            y_offset = -(i % 3) * 16 
             fig.add_vline(x=dt, line_width=1, line_dash="dash", line_color="rgba(255,255,255,0.15)",
                           annotation_text=label, annotation_position="top left", 
+                          annotation_yshift=y_offset,
                           annotation_font=dict(color="#A1A1AA", size=10))
 
     fig.update_layout(height=360, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
@@ -734,16 +730,18 @@ def sidebar():
     return html.Div(className='sidebar', children=[
         html.Div(className='sidebar-top', children=[
             html.Div(className='brand-logo', children=[
-                html.Img(src=app.get_asset_url('Anomaly_logo.png'), className='logo-img', alt='Anomaly'),
-                html.Span("Anomaly", className='brand-word'),
-            ]),
-            html.Button(icon('lucide:panel-left', 18, ACCENT2), id='collapse-btn', n_clicks=0,
-                        className='collapse-btn', title='Toggle sidebar'),
+                html.Div(className='logo-left', children=[
+                    html.Img(src=app.get_asset_url('Anomaly_logo.png'), className='logo-img', alt='Anomaly'),
+                    html.Span("Anomaly", className='brand-word'),
+                ]),
+                html.Button(icon('lucide:panel-left', 18, ACCENT2), id='collapse-btn', n_clicks=0,
+                            className='collapse-btn', title='Toggle sidebar'),
+            ])
         ]),
         html.Div(nav, className='nav-menu'),
         html.Div(className='sidebar-foot', children=[
             html.Div(className='live-pill', children=[
-                html.Span(className='status-dot'), "LIVE"]),
+                html.Span(className='status-dot'), html.Span("LIVE", className='live-pill-text')]),
         ]),
     ])
 
@@ -969,7 +967,7 @@ app.clientside_callback(
         var el = document.querySelector('.app-container');
         if (el) { el.classList.toggle('collapsed'); }
         // Delayed resize event so Plotly graphs re-scale *after* CSS width transition finishes
-        setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 250);
+        setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 300);
         return window.dash_clientside.no_update;
     }
     """,
