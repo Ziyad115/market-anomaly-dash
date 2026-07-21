@@ -2,9 +2,12 @@ import os
 import urllib.parse
 import xml.etree.ElementTree as ET
 import json
+import threading
 import concurrent.futures
 import traceback
+import pickle
 import tempfile
+import random
 from datetime import datetime, timedelta
 from functools import lru_cache
 
@@ -82,7 +85,7 @@ TR = {
         'status_stress': 'Stress', 'status_crisis': 'Crisis',
         'alert_moderate': 'Moderate', 'alert_severe': 'Severe',
         'narrative_calm': "Markets look calm today — no unusual stress detected. The current status is {status}. Normal background activity is mainly driven by {driver}.",
-        'narrative_warn': "Caution: Market stress is unusually high right now. The current status is {status}, primarily driven by sudden moves in {driver} ({pct:.0f}% of the activity). Keep an eye on conditions.",
+        'narrative_warn': "Caution: Market stress is unusually high right now. The current status is {status}, primarily driven by sudden moves in {driver} ({pct}% of the activity). Keep an eye on conditions.",
         'chart_score': 'Anomaly Score', 'chart_limit': 'Threshold Limit', 'anomaly': 'Anomaly', 'fetch_failed': 'Fetch Failed',
         'module_not_installed': 'Module not installed', 'unavailable': 'Unavailable', 'days_ago_suffix': 'days ago',
         'score_label': 'Market Anomaly Score', 'lang_btn': 'عربي', 'toggle_sidebar': 'Toggle Sidebar',
@@ -129,7 +132,7 @@ TR = {
         'status_stress': 'ضغط', 'status_crisis': 'أزمة',
         'alert_moderate': 'متوسط', 'alert_severe': 'شديد',
         'narrative_calm': "تبدو الأسواق هادئة اليوم — لم نكتشف أي ضغط غير عادي. الحالة الحالية {status}. النشاط الطبيعي مدفوع بشكل رئيسي بـ {driver}.",
-        'narrative_warn': "تحذير: ضغط السوق مرتفع جداً الآن. الحالة الحالية {status}، مدفوعة بحركات مفاجئة في {driver} ({pct:.0f}% من النشاط). يرجى المراقبة.",
+        'narrative_warn': "تحذير: ضغط السوق مرتفع جداً الآن. الحالة الحالية {status}، مدفوعة بحركات مفاجئة في {driver} ({pct}% من النشاط). يرجى المراقبة.",
         'chart_score': 'درجة المؤشر', 'chart_limit': 'حد التنبيه', 'anomaly': 'تنبيه شذوذ', 'fetch_failed': 'فشل التحديث',
         'module_not_installed': 'الوحدة غير مثبتة', 'unavailable': 'غير متوفر', 'days_ago_suffix': 'أيام مضت',
         'score_label': 'مؤشر شذوذ السوق', 'lang_btn': 'EN', 'toggle_sidebar': 'طي/توسيع القائمة',
@@ -198,7 +201,7 @@ def tint(hex_color, alpha):
 #  DATA LOGIC & ASYNC FETCHING
 # ─────────────────────────────────────────────────────────────────────────────
 def fetch_single_ticker(name, t_sym):
-    """Fetches a single ticker, handling fallback & exponential backoff sequentially."""
+    """Sequential fetch using yfinance with exponential backoff & jitter to respect rate limits."""
     close = None
     for attempt in range(4):
         try:
@@ -218,7 +221,7 @@ def fetch_single_ticker(name, t_sym):
     return name, close if close is not None else pd.Series(dtype=float), "yfinance"
 
 def fetch_fg():
-    """Background fetcher for Fear & Greed."""
+    """Background fetcher for CNN Fear & Greed."""
     if HAS_FG:
         try:
             FG_CACHE['data'] = fear_and_greed.get()
@@ -227,7 +230,7 @@ def fetch_fg():
             pass
 
 def load_data():
-    """Sequential robust fetching with cache and FRED fallbacks to avoid Rate Limits."""
+    """Robust data loading with FRED fallbacks and local caching."""
     global DATA_SOURCE  
     tickers = {'S&P500': '^GSPC', 'VIX': '^VIX', 'Gold': 'GC=F', 'Oil_WTI': 'CL=F', 'USD_Index': 'DX-Y.NYB'}
     fred_map = {'VIX': 'VIXCLS', 'Oil_WTI': 'DCOILWTICO'}
@@ -248,7 +251,7 @@ def load_data():
     # Fire off F&G independently so network lag doesn't block the layout
     threading.Thread(target=fetch_fg, daemon=True).start()
 
-    # SEQUENTIAL fetch to strictly avoid Yahoo rate limits (No ThreadPoolExecutor)
+    # SEQUENTIAL fetch to strictly avoid Yahoo rate limits
     for name, sym in tickers.items():
         series = pd.Series(dtype=float)
         src_name = "none"
@@ -318,7 +321,7 @@ def load_data():
 def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
     df = prices.copy()
     
-    # Gracefully handle completely missing signals
+    # Gracefully handle missing signals to avoid column exceptions
     active_price_assets = [c for c in ['S&P500', 'Gold', 'Oil_WTI', 'USD_Index'] if c in df.columns]
     active_signals = [c for c in SIGNALS if c in df.columns]
 
@@ -350,6 +353,7 @@ def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
     for s in active_signals:
         df[f'{s}_Contribution'] = (df[f'{s}_Zscore'] ** 2 / safe) * 100
         
+    # Inject NaNs for fully missing signals so layout still builds safely
     for s in SIGNALS:
         if s not in active_signals:
             df[f'{s}_Contribution'] = np.nan
@@ -425,7 +429,6 @@ VAL = VAL_IF = None
 AVAIL_YEARS = []
 SUMMARY = {}
 DATA_OK = False
-DATA_LOADING = False
 LOAD_ERR = ""
 TRADING_DAYS = 0
 LOADED_AT = "—"
@@ -539,7 +542,8 @@ def get_market_status(score, threshold, lang):
     return t('status_crisis', lang), "#E02424"
 
 def dual_market_narrative(row):
-    score, thresh = row['Anomaly_Score'], row['Threshold']
+    score = row.get('Anomaly_Score', np.nan)
+    thresh = row.get('Threshold', np.nan)
     contribs = {s: row.get(f'{s}_Contribution', 0) for s in SIGNALS}
     top_asset_key = max(contribs, key=lambda s: contribs[s] if pd.notna(contribs[s]) else -1)
     pct = contribs[top_asset_key]
@@ -547,10 +551,13 @@ def dual_market_narrative(row):
     def generate(lang):
         asset_display = t('assets', lang).get(top_asset_key, top_asset_key)
         status_label, _color = get_market_status(score, thresh, lang)
-        if score < thresh or pd.isna(score):
+        
+        # Format explicitly safely against NaNs
+        if pd.isna(score) or pd.isna(thresh) or score < thresh:
             return t('narrative_calm', lang).format(status=status_label, driver=asset_display)
         else:
-            return t('narrative_warn', lang).format(status=status_label, driver=asset_display, pct=pct)
+            pct_str = f"{pct:.0f}" if pd.notna(pct) else "0"
+            return t('narrative_warn', lang).format(status=status_label, driver=asset_display, pct=pct_str)
             
     return html.Span([
         html.Span(generate('en'), className='lang-en'),
@@ -568,7 +575,10 @@ def build_figure(view, current_color, lang='en'):
     else:
         plot_df = DF.resample("ME").last()
 
-    y_top = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) * 1.15 if not plot_df.empty else 1.0
+    # Safely compute chart boundaries even if data arrays contain only NaNs
+    max_val = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) if not plot_df.empty else 0
+    y_top = max_val * 1.15 if pd.notna(max_val) else 1.0
+
     fig = go.Figure()
 
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines',
@@ -635,15 +645,18 @@ def build_contribution_chart(r_color, lang='en'):
 
     font_fam = 'ThmanyahSans, sans-serif' if lang == 'ar' else 'Inter, sans-serif'
     
+    # Safe float formatting for labels to prevent ValueError on NaN
+    text_vals = [f"{v:.1f}%" if pd.notna(v) else "—" for v in contribs.values()]
+    
     fig = go.Figure(go.Bar(
         x=list(contribs.values()), y=list(contribs.keys()), orientation='h',
-        marker=dict(color=colors), text=[f"{v:.1f}%" for v in contribs.values()],
+        marker=dict(color=colors), text=text_vals,
         textposition='outside', textfont=dict(color='#A1A1AA', family=font_fam, size=11)
     ))
     
     fig.update_layout(
         margin=dict(l=0, r=30, t=0, b=0), height=140, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.04)', zeroline=False, showticklabels=False, range=[0, max(contribs.values()) * 1.25]),
+        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.04)', zeroline=False, showticklabels=False, range=[0, max(contribs.values() or [0]) * 1.25]),
         yaxis=dict(showgrid=False, tickfont=dict(color='#E4E4E7', size=11)),
         font=dict(family=font_fam), hovermode=False
     )
@@ -687,11 +700,15 @@ def fear_greed_kpi():
 
 def hero_section():
     latest = DF.iloc[-1]
-    score, thresh = latest['Anomaly_Score'], latest['Threshold']
+    score = latest.get('Anomaly_Score', np.nan)
+    thresh = latest.get('Threshold', np.nan)
     
     _, r_color = get_market_status(score, thresh, 'en') 
-    gap = score - thresh
-    up = gap >= 0
+    
+    # Safe numerical logic for gap
+    gap = score - thresh if pd.notna(score) and pd.notna(thresh) else np.nan
+    up = gap >= 0 if pd.notna(gap) else True
+    
     delta_class = 'delta up' if up else 'delta down'
     
     score_display = f"{score:.2f}" if pd.notna(score) else "—"
@@ -745,19 +762,22 @@ def alert_card(date_idx, row):
     top_asset = max(contribs, key=lambda s: contribs[s] if pd.notna(contribs[s]) else -1)
     top_pct = contribs[top_asset]
     
+    # Safe pct layout
+    pct_display = f"{top_pct:.0f}%" if pd.notna(top_pct) else "—"
     driver_txt = html.Span([
-        html.Span(f"{get_asset(top_asset, 'en')} {top_pct:.0f}%", className='lang-en'),
-        html.Span(f"{get_asset(top_asset, 'ar')} {top_pct:.0f}%", className='lang-ar')
-    ]) if pd.notna(top_pct) else "—"
+        html.Span(f"{get_asset(top_asset, 'en')} {pct_display}", className='lang-en'),
+        html.Span(f"{get_asset(top_asset, 'ar')} {pct_display}", className='lang-ar')
+    ])
 
     sp500_val = f"{row['S&P500']:,.0f}" if 'S&P500' in row and pd.notna(row['S&P500']) else trans('unavailable')
     vix_val = f"{row['VIX']:.1f}" if 'VIX' in row and pd.notna(row['VIX']) else trans('unavailable')
+    thresh_val = f"{row['Threshold']:.2f}" if pd.notna(row.get('Threshold')) else "—"
 
     stats = [
         stat_chip('top_driver', driver_txt, driver=True),
         stat_chip("S&P 500", sp500_val),
         stat_chip("VIX", vix_val),
-        stat_chip('chart_limit', f"{row['Threshold']:.2f}"),
+        stat_chip('chart_limit', thresh_val),
     ]
     pval = row.get('Anomaly_PValue', np.nan)
     if pd.notna(pval):
@@ -923,6 +943,9 @@ def sidebar():
         ]),
         html.Div(className='nav-container', children=[
             html.Div(nav, className='nav-menu'),
+            html.Div(className='nav-extra', children=[
+                html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
+            ]),
         ])
     ])
 
@@ -977,41 +1000,50 @@ app.index_string = '''<!DOCTYPE html>
 </html>'''
 
 def serve_layout():
-    sync_state()
-    
-    if not DATA_OK and os.path.exists(LOCK_FILE):
+    try:
+        sync_state()
+        
+        if not DATA_OK and os.path.exists(LOCK_FILE):
+            return html.Div(
+                style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'justifyContent': 'center', 'height': '100vh', 'backgroundColor': '#0A0A0A', 'fontFamily': 'Inter, sans-serif'},
+                children=[
+                    dcc.Interval(id='boot-interval', interval=1000, n_intervals=0),
+                    html.Div(id='boot-trigger', style={'display': 'none'}),
+                    html.Div(style={'width': '40px', 'height': '40px', 'border': '3px solid rgba(255,255,255,0.1)', 'borderTopColor': POS, 'borderRadius': '50%', 'animation': 'spin 1s linear infinite', 'marginBottom': '20px'}),
+                    html.H2("Initializing Market Intelligence...", style={'fontSize': '15px', 'fontWeight': '500', 'letterSpacing': '0.05em', 'color': ACCENT2})
+                ]
+            )
+
+        if not DATA_OK:
+            return html.Div(className='error-screen', children=[html.H1("Service Unavailable"), html.P("Market data failed to load. See server logs for details."), html.Code(LOAD_ERR)])
+
+        overview_html = build_view("overview")
+
+        return html.Div(id='root-container', className='app-container lang-en', dir='ltr', children=[
+            dcc.Interval(id='render-interval', interval=200, max_intervals=1),
+            dcc.Store(id='tr-store', data=TR),
+            dcc.Store(id='nav-dummy'), dcc.Store(id='collapse-dummy'),
+            sidebar(),
+            html.Div(className='main-content', children=[
+                html.Div(className='top-nav', children=[
+                    html.Div(className='status-indicator', children=[
+                        html.Span(className='status-dot', style={'background': POS, 'boxShadow': f'0 0 10px {POS}'}),
+                        html.Span(trans('live_data'), className='status-src')
+                    ])
+                ]),
+                html.Div(overview_html, id='views-wrap'),
+            ]),
+        ])
+    except Exception as e:
+        err_trace = traceback.format_exc()
+        print(f"[LAYOUT EXCEPTION] {err_trace}")
         return html.Div(
-            style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'justifyContent': 'center', 'height': '100vh', 'backgroundColor': '#0A0A0A', 'fontFamily': 'Inter, sans-serif'},
+            style={'padding': '50px', 'color': '#ff4b4b', 'backgroundColor': '#0a0a0a', 'fontFamily': 'monospace', 'height': '100vh'},
             children=[
-                dcc.Interval(id='boot-interval', interval=1000, n_intervals=0),
-                html.Div(id='boot-trigger', style={'display': 'none'}),
-                html.Div(style={'width': '40px', 'height': '40px', 'border': '3px solid rgba(255,255,255,0.1)', 'borderTopColor': POS, 'borderRadius': '50%', 'animation': 'spin 1s linear infinite', 'marginBottom': '20px'}),
-                html.H2("Initializing Market Intelligence...", style={'fontSize': '15px', 'fontWeight': '500', 'letterSpacing': '0.05em', 'color': ACCENT2})
+                html.H2("CRITICAL LAYOUT ERROR"),
+                html.Pre(err_trace, style={'whiteSpace': 'pre-wrap', 'wordBreak': 'break-word', 'color': '#a1a1aa'})
             ]
         )
-
-    if not DATA_OK:
-        return html.Div(className='error-screen', children=[html.H1("Service Unavailable"), html.P("Market data failed to load. See server logs for details."), html.Code(LOAD_ERR)])
-
-    overview_html = build_view("overview")
-
-    return html.Div(id='root-container', className='app-container lang-en', dir='ltr', children=[
-        dcc.Store(id='tr-store', data=TR),
-        dcc.Store(id='nav-dummy'), dcc.Store(id='collapse-dummy'),
-        sidebar(),
-        html.Div(className='main-content', children=[
-            html.Div(className='top-nav', children=[
-                html.Div(className='nav-extra', children=[
-                    html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
-                ]),
-                html.Div(className='status-indicator', children=[
-                    html.Span(className='status-dot', style={'background': POS, 'boxShadow': f'0 0 10px {POS}'}),
-                    html.Span(trans('live_data'), className='status-src')
-                ])
-            ]),
-            html.Div(overview_html, id='views-wrap'),
-        ]),
-    ])
 
 def build_view(view_key, lang='en'):
     if view_key == "overview":
@@ -1027,7 +1059,7 @@ def build_view(view_key, lang='en'):
         row_2 = html.Div(className='fintech-grid layout-row-2', children=[
             html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('drivers_today'), className='card-title'),
-                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=build_contribution_chart(r_color, 'en'), config={'displayModeBar': False})])
+                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=get_empty_fig(), config={'displayModeBar': False})])
             ]),
             html.Div(className='glass-card flex-col', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('market_narrative'), className='card-title'),
@@ -1037,7 +1069,7 @@ def build_view(view_key, lang='en'):
 
         row_3 = html.Div(className='fintech-grid kpi-row', children=[
             fear_greed_kpi(),
-            kpi_card('exp_thresh', f"{thresh:.2f}", 'causal_mean', icon_name='lucide:git-branch'),
+            kpi_card('exp_thresh', f"{thresh:.2f}" if pd.notna(thresh) else "—", 'causal_mean', icon_name='lucide:git-branch'),
             kpi_card('alert_freq', f"{SUMMARY['flag_rate']:.1f}%", 'all_time_rate', icon_name='lucide:activity'),
             kpi_card('total_alerts', f"{SUMMARY['total_flags']}", 'hist_events', icon_name='lucide:bell-ring', value_color=ACCENT),
         ])
@@ -1055,7 +1087,7 @@ def build_view(view_key, lang='en'):
                                  {'label': html.Span([html.Span("Full History (2005-Present)", className='lang-en'), html.Span("التاريخ الكامل (2005-الآن)", className='lang-ar')]), 'value': "Full History (2005-Present)"}],
                         value="Last 2 Years"),
                 ]),
-                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT, lang), config={'displayModeBar': False})]),
+                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT, 'en'), config={'displayModeBar': False})]),
             ])
         ])
 
@@ -1132,6 +1164,19 @@ def switch_view(n_clicks, current_class):
     
     return view_html, nav_classes
 
+@callback(
+    Output('contrib-chart', 'figure'),
+    Input('render-interval', 'n_intervals'),
+    State('root-container', 'className'),
+    prevent_initial_call=True
+)
+def load_deferred_charts(n, current_class):
+    if not DATA_OK: return no_update
+    lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
+    latest = DF.iloc[-1]
+    _, r_color = get_market_status(latest['Anomaly_Score'], latest['Threshold'], lang)
+    return build_contribution_chart(r_color, lang)
+
 @callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
 def update_timeline_chart(view, current_class):
     if not DATA_OK: return no_update
@@ -1164,7 +1209,7 @@ def load_news(n_clicks, btn_id):
         html.A("Read Source ↗", href=link, target="_blank", className='news-link'),
     ]) for (title, link, pub) in news]
 
-# Instant UI Language Switch & Plotly Chart Restyling (Decoupled from Outputs to prevent failing on hidden charts)
+# Decoupled Language Switcher. Instant updates using Plotly.relayout/restyle
 app.clientside_callback(
     """
     function(n_clicks, tr_data, current_class) {
