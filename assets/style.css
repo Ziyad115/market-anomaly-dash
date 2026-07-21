@@ -49,7 +49,8 @@ svg { display: block; }
 .app-container.collapsed .sidebar-top { justify-content: center; }
 .app-container.collapsed .collapse-btn { display: none; }
 .app-container.collapsed .nav-item { justify-content: center; padding: 10px; }
-.app-container.collapsed .brand-logo { justify-content: center; }
+/* Force centering and width fill so logo does not disappear */
+.app-container.collapsed .brand-logo { justify-content: center; width: 100%; }
 
 /* Nav Menu */
 .nav-menu { display: flex; flex-direction: column; gap: 6px; }
@@ -181,7 +182,7 @@ svg { display: block; }
 
 /* ── BRAND / LOGO ─────────────────────────────────────────── */
 .sidebar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.logo-img { width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0; object-fit: cover; box-shadow: 0 0 0 1px var(--glass-border), 0 6px 18px rgba(0,0,0,0.5); }
+.logo-img { width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0 !important; object-fit: contain; box-shadow: 0 0 0 1px var(--glass-border), 0 6px 18px rgba(0,0,0,0.5); }
 .brand-word { font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; font-size: 15px; white-space: nowrap; }
 .collapse-btn { background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; transition: background 0.2s var(--ease), color 0.2s var(--ease); }
 .collapse-btn:hover { background: var(--glass-hover); color: var(--text-primary); }
