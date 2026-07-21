@@ -80,7 +80,7 @@ svg { display: block; }
 .brand-word { max-width: 100px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; font-size: 15px; }
 .nav-label { max-width: 120px; display: inline-block; }
 
-/* Accented Language Toggle Button */
+/* Accented Language Toggle Button (Moved up into Nav area) */
 .lang-toggle-btn { 
     background: rgba(0, 229, 153, 0.08); 
     border: 1px solid rgba(0, 229, 153, 0.25); 
