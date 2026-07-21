@@ -58,7 +58,7 @@ TR = {
         'exp_thresh': 'Dynamic Threshold', 'causal_mean': 'Trailing mean + 2σ', 'alert_freq': 'Alert Frequency', 
         'all_time_rate': 'All-time rate', 'total_alerts': 'Total Alerts', 'hist_events': 'Historical events', 
         'full_timeline': 'Full Anomaly Timeline', 'anomaly_alerts': 'Anomaly Alerts', 'model_val': 'Model Validation & Backtest',
-        'live_data': 'Live Data', 'data_error': 'Data Error', 'market_intel': 'Market Intelligence',
+        'live_data': 'Live Data', 'data_error': 'Data Error',
         'confidence': 'Confidence:', 'status': 'Status:', 'last_updated': 'Last updated:', 'vs_thresh': 'vs Threshold',
         'pipeline_status': 'Pipeline status', 'operational': 'Operational', 'degraded': 'Degraded',
         'active_source': 'Active data source', 'trading_days': 'Trading days loaded', 'history_range': 'History range',
@@ -105,7 +105,7 @@ TR = {
         'exp_thresh': 'الحد الديناميكي', 'causal_mean': 'المتوسط التراكمي + 2σ', 'alert_freq': 'معدل التنبيهات', 
         'all_time_rate': 'تاريخياً', 'total_alerts': 'إجمالي التنبيهات', 'hist_events': 'أحداث تاريخية', 
         'full_timeline': 'السجل الزمني الكامل', 'anomaly_alerts': 'سجل التنبيهات', 'model_val': 'دقة وتقييم النموذج',
-        'live_data': 'بيانات مباشرة', 'data_error': 'خطأ في البيانات', 'market_intel': 'ذكاء الأسواق',
+        'live_data': 'بيانات مباشرة', 'data_error': 'خطأ في البيانات',
         'confidence': 'مستوى الثقة:', 'status': 'الحالة:', 'last_updated': 'آخر تحديث:', 'vs_thresh': 'مقارنة بالحد',
         'pipeline_status': 'حالة الاتصال', 'operational': 'مستقر', 'degraded': 'متدهور',
         'active_source': 'مصدر البيانات', 'trading_days': 'أيام التداول المتاحة', 'history_range': 'النطاق التاريخي',
@@ -300,7 +300,7 @@ def get_news_for_date(date_str, days_window=1):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  STARTUP
+#  STARTUP & GLOBAL CACHE
 # ─────────────────────────────────────────────────────────────────────────────
 DF = DF_IF = None
 VAL = VAL_IF = None
@@ -311,9 +311,19 @@ LOAD_ERR = ""
 DATA_SOURCE = "unknown"
 TRADING_DAYS = 0
 LOADED_AT = "—"
+FG_CACHE = {'timestamp': None, 'data': None} # Cached globally to prevent blocking render
 
 def init_data():
-    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT
+    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT, FG_CACHE
+    
+    # Pre-fetch Fear & Greed once on boot to prevent 20s UI blocking
+    if HAS_FG:
+        try:
+            FG_CACHE['data'] = fear_and_greed.get()
+            FG_CACHE['timestamp'] = datetime.now()
+        except Exception:
+            pass
+            
     prices = load_data()
     DF = compute_anomaly(prices)
     VAL = validate_events(DF, HISTORICAL_EVENTS, 'Flagged')
@@ -467,10 +477,12 @@ def kpi_card(label_key, value_component, sub_key, large=False, icon_name=None, v
 def fear_greed_kpi():
     fg_val_str = "N/A"
     fg_color = MUTE
+    desc_comp = trans('unavailable')
     
+    # Read instantly from cached value prepared in init_data() to prevent 20s UI blocking
     if HAS_FG:
-        try:
-            fg = fear_and_greed.get()
+        if FG_CACHE.get('data'):
+            fg = FG_CACHE['data']
             fg_val_str = f"{fg.value:.0f}"
             desc_low = fg.description.lower()
             
@@ -482,7 +494,7 @@ def fear_greed_kpi():
             else: fg_key, fg_color = 'fg_neutral', MUTE
             
             desc_comp = trans(fg_key)
-        except Exception:
+        else:
             desc_comp = trans('fetch_failed')
     else:
         desc_comp = trans('module_not_installed')
@@ -720,10 +732,13 @@ def sidebar():
                 html.Button(icon('lucide:panel-left', 18, ACCENT2), id='collapse-btn', n_clicks=0, className='collapse-btn'),
             ])
         ]),
-        html.Div(nav, className='nav-menu'),
-        html.Div(className='sidebar-foot', children=[
-            html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
+        html.Div(className='nav-container', children=[
+            html.Div(nav, className='nav-menu'),
+            html.Div(className='nav-extra', children=[
+                html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
+            ]),
         ]),
+        html.Div(className='sidebar-foot'), # Empty container to satisfy layout expectations without holding the Live Pill
     ])
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -873,7 +888,7 @@ app.layout = build_layout
 #  CALLBACKS
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Allow duplicate outputs safely since timeline chart populates on initial render
+# Allow duplicate outputs safely. Prevent initial call avoids the race condition
 @callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
 def update_chart(view, current_class):
     if not DATA_OK: return no_update
@@ -910,7 +925,9 @@ def load_news(n_clicks, btn_id):
 app.clientside_callback(
     """
     function(n_clicks, tr_data, current_class, fig_over, fig_time, fig_contrib) {
-        if (!n_clicks) return window.dash_clientside.no_update;
+        // Protect against execution before the DOM layout initializes
+        if (!n_clicks || !document.querySelector('.app-container')) return window.dash_clientside.no_update;
+        
         const new_lang = current_class.includes('lang-en') ? 'ar' : 'en';
         const is_ar = new_lang === 'ar';
         const TR = tr_data[new_lang];
