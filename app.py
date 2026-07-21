@@ -122,7 +122,10 @@ TR = {
     }
 }
 
-def _(key, lang='en'):
+# ─────────────────────────────────────────────────────────────────────────────
+#  GLOBALLY RENAMED TRANSLATION FUNCTION (Fixes UnboundLocalError)
+# ─────────────────────────────────────────────────────────────────────────────
+def t(key, lang='en'):
     return TR.get(lang, TR['en']).get(key, key)
 
 ICO = {
@@ -137,11 +140,11 @@ HISTORICAL_EVENTS = {
     "2010-05-06": "Flash Crash",
     "2011-08-08": "US credit downgrade",
     "2015-08-24": "China devaluation (Black Monday)",
-    "2020-02-24": "evt_covid",  # Maps to TR key
+    "2020-02-24": "evt_covid",  
     "2020-03-16": "COVID-19 circuit breakers",
     "2022-06-13": "S&P 500 bear market",
-    "2022-02-24": "evt_ukraine", # Maps to TR key
-    "2023-03-10": "evt_svb",     # Maps to TR key
+    "2022-02-24": "evt_ukraine", 
+    "2023-03-10": "evt_svb",     
 }
 
 def tint(hex_color, alpha):
@@ -167,8 +170,8 @@ def load_data():
     data = {}
     try:
         from defeatbeta_api.data.ticker import Ticker as DBTicker
-        for name, t in tickers.items():
-            dbt = DBTicker(t)
+        for name, t_sym in tickers.items():
+            dbt = DBTicker(t_sym)
             price_df = dbt.price()
             price_df['report_date'] = pd.to_datetime(price_df['report_date'])
             price_df = price_df.set_index('report_date').sort_index()
@@ -181,11 +184,11 @@ def load_data():
     except Exception:
         pass
 
-    for name, t in tickers.items():
+    for name, t_sym in tickers.items():
         close = None
         for attempt in range(4):
             try:
-                d = yf.download(t, start='2005-01-01', progress=False)
+                d = yf.download(t_sym, start='2005-01-01', progress=False)
                 c = d['Close']
                 if isinstance(c, pd.DataFrame): c = c.iloc[:, 0]
                 if len(c) > 0:
@@ -326,11 +329,11 @@ if not os.environ.get("APP_SKIP_LOAD"):
 #  UI HELPERS & LOGIC
 # ─────────────────────────────────────────────────────────────────────────────
 def get_market_status(score, threshold, lang):
-    if pd.isna(score) or pd.isna(threshold): return _('unavailable', lang), MUTE
-    if score < threshold * 0.75: return _('status_normal', lang), POS
-    if score < threshold: return _('status_elevated', lang), WARN
-    if score < threshold * 1.5: return _('status_stress', lang), DANGER
-    return _('status_crisis', lang), "#E02424"
+    if pd.isna(score) or pd.isna(threshold): return t('unavailable', lang), MUTE
+    if score < threshold * 0.75: return t('status_normal', lang), POS
+    if score < threshold: return t('status_elevated', lang), WARN
+    if score < threshold * 1.5: return t('status_stress', lang), DANGER
+    return t('status_crisis', lang), "#E02424"
 
 def generate_market_narrative(row, lang):
     score, thresh = row['Anomaly_Score'], row['Threshold']
@@ -338,18 +341,18 @@ def generate_market_narrative(row, lang):
     top_asset_key = max(contribs, key=lambda s: contribs[s] if pd.notna(contribs[s]) else -1)
     pct = contribs[top_asset_key]
     
-    asset_display = _('assets', lang).get(top_asset_key, top_asset_key)
-    status_label, _ = get_market_status(score, thresh, lang)
+    asset_display = t('assets', lang).get(top_asset_key, top_asset_key)
+    status_label, _color = get_market_status(score, thresh, lang)
     
     if score < thresh:
-        return _('narrative_calm', lang).format(status=status_label, driver=asset_display)
+        return t('narrative_calm', lang).format(status=status_label, driver=asset_display)
     else:
-        return _('narrative_warn', lang).format(status=status_label, driver=asset_display, pct=pct)
+        return t('narrative_warn', lang).format(status=status_label, driver=asset_display, pct=pct)
 
 def build_figure(view, current_color, lang):
-    if view == "Last 6 Months" or view == _('ranges', lang).get("Last 6 Months"):
+    if view == "Last 6 Months" or view == t('ranges', lang).get("Last 6 Months"):
         plot_df = DF.tail(126)
-    elif view == "Last 2 Years" or view == _('ranges', lang).get("Last 2 Years"):
+    elif view == "Last 2 Years" or view == t('ranges', lang).get("Last 2 Years"):
         plot_df = DF.tail(504).resample("W").last()
     else:
         plot_df = DF.resample("W").last()
@@ -361,12 +364,12 @@ def build_figure(view, current_color, lang):
                              line=dict(color=tint(current_color, 0.2), width=5, shape='spline', smoothing=0.35),
                              hoverinfo='skip', showlegend=False))
     
-    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines', name=_('chart_score', lang),
+    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines', name=t('chart_score', lang),
                              line=dict(color=current_color, width=2, shape='spline', smoothing=0.35),
                              fill='tozeroy', fillcolor=tint(current_color, 0.08),
                              hovertemplate='Score: <b>%{y:.2f}</b><extra></extra>'))
     
-    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Threshold'], mode='lines', name=_('chart_limit', lang),
+    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Threshold'], mode='lines', name=t('chart_limit', lang),
                              line=dict(color=tint(WARN, 0.6), width=1.5, dash='dash'),
                              hovertemplate='Limit: %{y:.2f}<extra></extra>'))
 
@@ -378,8 +381,7 @@ def build_figure(view, current_color, lang):
     for i, (date_str, label_key) in enumerate(sorted(HISTORICAL_EVENTS.items())):
         dt = pd.to_datetime(date_str)
         if dt >= plot_df.index.min() and dt <= plot_df.index.max():
-            # Translate if it's a key, else keep literal
-            label = _(label_key, lang)
+            label = t(label_key, lang)
             y_offset = -(i % 3) * 16 
             fig.add_vline(x=dt, line_width=1, line_dash="dash", line_color="rgba(255,255,255,0.15)",
                           annotation_text=label, annotation_position="top right" if lang == 'ar' else "top left", 
@@ -407,7 +409,7 @@ def build_figure(view, current_color, lang):
 
 def build_contribution_chart(r_color, lang):
     row = DF.iloc[-1]
-    contribs = {_('assets', lang).get(s, s): row.get(f'{s}_Contribution', 0) for s in SIGNALS}
+    contribs = {t('assets', lang).get(s, s): row.get(f'{s}_Contribution', 0) for s in SIGNALS}
     contribs = dict(sorted(contribs.items(), key=lambda item: item[1]))
     colors = [r_color if i == len(contribs)-1 else 'rgba(255,255,255,0.12)' for i in range(len(contribs))]
 
@@ -439,31 +441,29 @@ def kpi_card(label, value, sub, large=False, icon_name=None, value_color=None):
 
 def fear_greed_kpi(lang):
     fg_val_str = "N/A"
-    fg_desc = _('unavailable', lang)
+    fg_desc = t('unavailable', lang)
     fg_color = MUTE
     if HAS_FG:
         try:
             fg = fear_and_greed.get()
             fg_val_str = f"{fg.value:.0f}"
             
-            # Use original English logic for coloring, but translate the string for UI
             desc_low = fg.description.lower()
             if "fear" in desc_low: fg_color = DANGER
             elif "greed" in desc_low: fg_color = POS
             elif "neutral" in desc_low: fg_color = MUTE
             
-            # Simple manual translation for F&G labels
             fg_map = {
                 'extreme fear': 'خوف شديد', 'fear': 'خوف', 
                 'neutral': 'محايد', 'greed': 'طمع', 'extreme greed': 'طمع شديد'
             }
             fg_desc = fg_map.get(desc_low, fg.description.title()) if lang == 'ar' else fg.description.title()
         except Exception:
-            fg_desc = _('fetch_failed', lang)
+            fg_desc = t('fetch_failed', lang)
     else:
-        fg_desc = _('module_not_installed', lang)
+        fg_desc = t('module_not_installed', lang)
         
-    return kpi_card(_('fg_index', lang), fg_val_str, fg_desc, large=True, value_color=fg_color)
+    return kpi_card(t('fg_index', lang), fg_val_str, fg_desc, large=True, value_color=fg_color)
 
 def hero_section(lang):
     latest = DF.iloc[-1]
@@ -472,22 +472,22 @@ def hero_section(lang):
     gap = score - thresh
     up = gap >= 0
     delta_class = 'delta up' if up else 'delta down'
-    delta_text = f"{'▲' if up else '▼'} {abs(gap):.2f} {_('vs_thresh', lang)}"
+    delta_text = f"{'▲' if up else '▼'} {abs(gap):.2f} {t('vs_thresh', lang)}"
     conf_score = "99.8%" 
     
     return html.Div(className='hero-panel glass-card', **{'data-aos': 'fade-up'}, children=[
         html.Div(className='hero-header', children=[
-            html.Span(_('score_label', lang), className='hero-title'),
+            html.Span(t('score_label', lang), className='hero-title'),
             html.Div(className='hero-badges', children=[
-                html.Span(f"{_('confidence', lang)} {conf_score}", className='badge outline'),
-                html.Span(f"{_('status', lang)} {regime}", className='badge solid', style={'backgroundColor': tint(r_color, 0.15), 'color': r_color, 'borderColor': tint(r_color, 0.3)})
+                html.Span(f"{t('confidence', lang)} {conf_score}", className='badge outline'),
+                html.Span(f"{t('status', lang)} {regime}", className='badge solid', style={'backgroundColor': tint(r_color, 0.15), 'color': r_color, 'borderColor': tint(r_color, 0.3)})
             ])
         ]),
         html.Div(className='hero-body', children=[
             html.Div(f"{score:.2f}", className='hero-score', style={'color': r_color, 'textShadow': f'0 0 32px {tint(r_color, 0.3)}'}),
             html.Div(className='hero-metrics', children=[
                 html.Span(delta_text, className=delta_class, style={'color': r_color, 'backgroundColor': tint(r_color, 0.1)}),
-                html.Span(f"{_('last_updated', lang)} {SUMMARY['updated']}", className='hero-timestamp')
+                html.Span(f"{t('last_updated', lang)} {SUMMARY['updated']}", className='hero-timestamp')
             ])
         ])
     ])
@@ -501,32 +501,32 @@ def alert_card(date_idx, row, lang):
     date_pretty = date_idx.strftime("%B %d, %Y")
     days_ago = (datetime.now() - date_idx.to_pydatetime().replace(tzinfo=None)).days
     is_severe = row['Anomaly_Score'] > row['Threshold'] * 1.3
-    sev_label = _('status_crisis', lang) if is_severe else _('status_stress', lang)
+    sev_label = t('status_crisis', lang) if is_severe else t('status_stress', lang)
     sev = DANGER if is_severe else WARN
 
     contribs = {s: row.get(f'{s}_Contribution', np.nan) for s in SIGNALS}
     top_asset = max(contribs, key=lambda s: contribs[s] if pd.notna(contribs[s]) else -1)
     top_pct = contribs[top_asset]
-    asset_display = _('assets', lang).get(top_asset, top_asset)
+    asset_display = t('assets', lang).get(top_asset, top_asset)
     driver_txt = f"{asset_display} {top_pct:.0f}%" if pd.notna(top_pct) else "—"
 
     stats = [
-        stat_chip(_('top_driver', lang), driver_txt, driver=True),
+        stat_chip(t('top_driver', lang), driver_txt, driver=True),
         stat_chip("S&P 500", f"{row['S&P500']:,.0f}"),
         stat_chip("VIX", f"{row['VIX']:.1f}"),
-        stat_chip(_('chart_limit', lang), f"{row['Threshold']:.2f}"),
+        stat_chip(t('chart_limit', lang), f"{row['Threshold']:.2f}"),
     ]
     pval = row.get('Anomaly_PValue', np.nan)
     if pd.notna(pval):
-        stats.append(stat_chip(_('rarity', lang), f"{pval*100:.2f}%"))
-    stats.append(stat_chip(_('when', lang), _('days_ago', lang).format(d=days_ago)))
+        stats.append(stat_chip(t('rarity', lang), f"{pval*100:.2f}%"))
+    stats.append(stat_chip(t('when', lang), t('days_ago', lang).format(d=days_ago)))
 
-    details_children = [html.Summary(f"📰 {_('view_news', lang)} {date_pretty}", className='news-summary')]
+    details_children = [html.Summary(f"📰 {t('view_news', lang)} {date_pretty}", className='news-summary')]
     if date_str in HISTORICAL_EVENTS:
         details_children.append(html.Div(className='event-note', children=[
-            html.Span("📌", className='pin'), html.Span(_(HISTORICAL_EVENTS[date_str], lang))]))
+            html.Span("📌", className='pin'), html.Span(t(HISTORICAL_EVENTS[date_str], lang))]))
     details_children.append(
-        html.Button(_('load_headlines', lang), id={'type': 'news-btn', 'index': date_str},
+        html.Button(t('load_headlines', lang), id={'type': 'news-btn', 'index': date_str},
                     n_clicks=0, className='news-load-btn'))
     details_children.append(
         dcc.Loading(type='circle', color=ACCENT,
@@ -551,18 +551,18 @@ def alert_card(date_idx, row, lang):
 def build_cards(year, month, lang):
     if not DATA_OK: return []
     flags = DF[DF['Flagged'] == True].sort_index(ascending=False)
-    if year and year != _('all_years', lang):
+    if year and year != t('all_years', lang):
         flags = flags[flags.index.year == int(year)]
-    if month and month != _('all_months', lang):
+    if month and month != t('all_months', lang):
         m_idx = TR[lang]['months'].index(month) + 1 if month in TR[lang]['months'] else MONTH_NAMES.index(month) + 1
         flags = flags[flags.index.month == m_idx]
 
     note = None
     if len(flags) > 60:
         flags = flags.head(60)
-        note = html.Div(_('showing_recent', lang), className='context-box')
+        note = html.Div(t('showing_recent', lang), className='context-box')
     if len(flags) == 0:
-        return [html.Div(_('no_anomaly', lang), className='context-box')]
+        return [html.Div(t('no_anomaly', lang), className='context-box')]
 
     children = []
     if note: children.append(note)
@@ -572,27 +572,27 @@ def build_cards(year, month, lang):
 def validation_section(lang):
     s = SUMMARY
     cards = html.Div(className='fintech-grid kpi-row', children=[
-        kpi_card(_('crisis_recall', lang), f"{s['recall']:.0f}%", f"{s['detected']} / {s['total_ev']}", large=True, value_color=POS if s['recall'] >= 70 else WARN),
-        kpi_card(_('events_detected', lang), f"{s['detected']}", _('within_7d', lang)),
-        kpi_card(_('flagged_days', lang), f"{s['total_flags']:,}", _('all_history', lang)),
-        kpi_card(_('daily_flag_rate', lang), f"{s['flag_rate']:.1f}%", _('of_trading_days', lang)),
+        kpi_card(t('crisis_recall', lang), f"{s['recall']:.0f}%", f"{s['detected']} / {s['total_ev']}", large=True, value_color=POS if s['recall'] >= 70 else WARN),
+        kpi_card(t('events_detected', lang), f"{s['detected']}", t('within_7d', lang)),
+        kpi_card(t('flagged_days', lang), f"{s['total_flags']:,}", t('all_history', lang)),
+        kpi_card(t('daily_flag_rate', lang), f"{s['flag_rate']:.1f}%", t('of_trading_days', lang)),
     ])
 
-    header_cells = [html.Th(_('date', lang)), html.Th(_('hist_event', lang)), html.Th(_('composite', lang)), html.Th(_('nearest', lang)), html.Th(_('peak_score', lang))]
+    header_cells = [html.Th(t('date', lang)), html.Th(t('hist_event', lang)), html.Th(t('composite', lang)), html.Th(t('nearest', lang)), html.Th(t('peak_score', lang))]
     
     body = []
     for r in VAL:
-        hit = html.Span(_('detected', lang), className='badge solid success') if r['detected'] else html.Span(_('missed', lang), className='badge solid error')
+        hit = html.Span(t('detected', lang), className='badge solid success') if r['detected'] else html.Span(t('missed', lang), className='badge solid error')
         nearest = f"{r['nearest']}d" if r['nearest'] is not None else "—"
         peak = f"{r['peak']:.2f}" if r['peak'] is not None else "—"
-        event_trans = _(HISTORICAL_EVENTS.get(r['date'], r['event']), lang)
+        event_trans = t(HISTORICAL_EVENTS.get(r['date'], r['event']), lang)
         cells = [html.Td(r['date'], className='mono'), html.Td(event_trans), html.Td(hit), html.Td(nearest, className='mono'), html.Td(peak, className='mono')]
         body.append(html.Tr(cells))
 
     table = html.Table(className='fintech-table', children=[html.Thead(html.Tr(header_cells)), html.Tbody(body)])
 
     return html.Div([
-        html.H2(_('model_val', lang), className='section-title'),
+        html.H2(t('model_val', lang), className='section-title'),
         cards,
         html.Div(className='glass-card table-wrap', children=table)
     ])
@@ -634,7 +634,7 @@ VIEWS = ["overview", "timeline", "alerts", "validation", "methodology", "raw"]
 def data_status_indicator(lang):
     ok = DATA_OK and DF is not None
     dot = POS if ok else DANGER
-    text = _('live_data', lang) if ok else _('data_error', lang)
+    text = t('live_data', lang) if ok else t('data_error', lang)
     return html.Div(className='status-indicator', children=[
         html.Span(className='status-dot', style={'background': dot, 'boxShadow': f'0 0 10px {dot}'}),
         html.Span(text, className='status-src')
@@ -644,14 +644,14 @@ def data_status_panel(lang):
     ok = DATA_OK and DF is not None
     rng = f"{DF.index.min().strftime('%b %Y')} – {DF.index.max().strftime('%b %Y')}" if ok else "—"
     items = [
-        (_('pipeline_status', lang), _('operational', lang) if ok else _('degraded', lang), POS if ok else DANGER),
-        (_('active_source', lang), DATA_SOURCE, ACCENT),
-        (_('trading_days', lang), f"{TRADING_DAYS:,}" if ok else "—", ACCENT),
-        (_('history_range', lang), rng, ACCENT2),
-        (_('last_fetch', lang), LOADED_AT, ACCENT2),
+        (t('pipeline_status', lang), t('operational', lang) if ok else t('degraded', lang), POS if ok else DANGER),
+        (t('active_source', lang), DATA_SOURCE, ACCENT),
+        (t('trading_days', lang), f"{TRADING_DAYS:,}" if ok else "—", ACCENT),
+        (t('history_range', lang), rng, ACCENT2),
+        (t('last_fetch', lang), LOADED_AT, ACCENT2),
     ]
     return html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=[
-        html.Div(className='card-title', children=[icon('lucide:activity', 16, ACCENT2), html.Span(f"  {_('data_status', lang)}")]),
+        html.Div(className='card-title', children=[icon('lucide:activity', 16, ACCENT2), html.Span(f"  {t('data_status', lang)}")]),
         html.Div(className='status-grid', children=[
             html.Div(className='status-cell', children=[
                 html.Div(k, className='status-key'), html.Div(v, className='status-val', style={'color': c}),
@@ -669,19 +669,19 @@ def _method_block(icon_name, title, children):
 
 def methodology_view(lang):
     return html.Div(className='view-fade-in', children=[
-        html.H2(_('methodology', lang), className='section-title'),
-        html.P(_('method_lead', lang), className='method-lead', **{'data-aos': 'fade-up'}),
+        html.H2(t('methodology', lang), className='section-title'),
+        html.P(t('method_lead', lang), className='method-lead', **{'data-aos': 'fade-up'}),
         data_status_panel(lang),
-        _method_block('lucide:gauge', _('m_title_1', lang), [html.P([_('m_p_1', lang)], className='method-p')]),
-        _method_block('lucide:sigma', _('m_title_2', lang), [html.P([_('m_p_2', lang)], className='method-p')]),
+        _method_block('lucide:gauge', t('m_title_1', lang), [html.P([t('m_p_1', lang)], className='method-p')]),
+        _method_block('lucide:sigma', t('m_title_2', lang), [html.P([t('m_p_2', lang)], className='method-p')]),
     ])
 
 def sidebar(lang):
     nav = [html.Div(id={'type': 'nav', 'index': key},
                     className='nav-item' + (' active' if key == 'overview' else ''),
-                    n_clicks=0, title=_(key, lang), **{'data-nav': key}, children=[
+                    n_clicks=0, title=t(key, lang), **{'data-nav': key}, children=[
                         html.Span(icon(NAV_ICONS.get(key), 18), className='nav-ico-wrap'),
-                        html.Span(_(key, lang), className='nav-label'),
+                        html.Span(t(key, lang), className='nav-label'),
                     ]) for key in VIEWS]
     return html.Div(className='sidebar', children=[
         html.Div(className='sidebar-top', children=[
@@ -691,14 +691,14 @@ def sidebar(lang):
                     html.Span("Anomaly", className='brand-word'),
                 ]),
                 html.Button(icon('lucide:panel-left', 18, ACCENT2), id='collapse-btn', n_clicks=0,
-                            className='collapse-btn', title=_('toggle_sidebar', lang)),
+                            className='collapse-btn', title=t('toggle_sidebar', lang)),
             ])
         ]),
         html.Div(nav, className='nav-menu'),
         html.Div(className='sidebar-foot', children=[
             html.Div(className='live-pill', children=[
                 html.Span(className='status-dot'), html.Span("LIVE", className='live-pill-text')]),
-            html.Button(_('lang_btn', lang), id='lang-toggle', className='lang-toggle-btn')
+            html.Button(t('lang_btn', lang), id='lang-toggle', className='lang-toggle-btn')
         ]),
     ])
 
@@ -756,34 +756,34 @@ def build_view(view_key, lang):
         status_label, r_color = get_market_status(score, thresh, lang)
         
         row_1 = html.Div(className='glass-card', style={'marginBottom': '24px'}, **{'data-aos': 'fade-up'}, children=[
-            html.Div(_('sys_stress', lang), className='card-title'),
-            html.Div(dir='ltr', children=[dcc.Graph(id='overview-chart', figure=build_figure(_('ranges', lang).get("Last 6 Months"), r_color, lang), config={'displayModeBar': False})])
+            html.Div(t('sys_stress', lang), className='card-title'),
+            html.Div(dir='ltr', children=[dcc.Graph(id='overview-chart', figure=build_figure(t('ranges', lang).get("Last 6 Months"), r_color, lang), config={'displayModeBar': False})])
         ])
 
         row_2 = html.Div(className='fintech-grid layout-row-2', children=[
             html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=[
-                html.Div(_('drivers_today', lang), className='card-title'),
+                html.Div(t('drivers_today', lang), className='card-title'),
                 html.Div(dir='ltr', children=[dcc.Graph(figure=build_contribution_chart(r_color, lang), config={'displayModeBar': False})])
             ]),
             html.Div(className='glass-card flex-col', **{'data-aos': 'fade-up'}, children=[
-                html.Div(_('market_narrative', lang), className='card-title'),
+                html.Div(t('market_narrative', lang), className='card-title'),
                 html.Div(generate_market_narrative(latest, lang), className='narrative-text')
             ])
         ])
 
         row_3 = html.Div(className='fintech-grid kpi-row', children=[
             fear_greed_kpi(lang),
-            kpi_card(_('exp_thresh', lang), f"{thresh:.2f}", _('causal_mean', lang), icon_name='lucide:git-branch'),
-            kpi_card(_('alert_freq', lang), f"{SUMMARY['flag_rate']:.1f}%", _('all_time_rate', lang), icon_name='lucide:activity'),
-            kpi_card(_('total_alerts', lang), f"{SUMMARY['total_flags']}", _('hist_events', lang), icon_name='lucide:bell-ring'),
+            kpi_card(t('exp_thresh', lang), f"{thresh:.2f}", t('causal_mean', lang), icon_name='lucide:git-branch'),
+            kpi_card(t('alert_freq', lang), f"{SUMMARY['flag_rate']:.1f}%", t('all_time_rate', lang), icon_name='lucide:activity'),
+            kpi_card(t('total_alerts', lang), f"{SUMMARY['total_flags']}", t('hist_events', lang), icon_name='lucide:bell-ring'),
         ])
 
         return html.Div(className='view-fade-in', children=[hero_section(lang), row_1, row_2, row_3])
 
     elif view_key == "timeline":
-        rngs = _('ranges', lang)
+        rngs = t('ranges', lang)
         return html.Div(className='view-fade-in', children=[
-            html.H2(_('full_timeline', lang), className='section-title'),
+            html.H2(t('full_timeline', lang), className='section-title'),
             html.Div(className='glass-card p-4', **{'data-aos': 'fade-up'}, children=[
                 dcc.Dropdown(id='range-dd', className='fintech-dd',
                     options=[{'label': rngs.get("Last 6 Months"), 'value': rngs.get("Last 6 Months")}, 
@@ -795,15 +795,15 @@ def build_view(view_key, lang):
         ])
 
     elif view_key == "alerts":
-        year_opts = [{'label': _('all_years', lang), 'value': _('all_years', lang)}] + [{'label': str(y), 'value': str(y)} for y in AVAIL_YEARS]
-        month_opts = [{'label': _('all_months', lang), 'value': _('all_months', lang)}] + [{'label': m, 'value': m} for m in TR[lang]['months']]
+        year_opts = [{'label': t('all_years', lang), 'value': t('all_years', lang)}] + [{'label': str(y), 'value': str(y)} for y in AVAIL_YEARS]
+        month_opts = [{'label': t('all_months', lang), 'value': t('all_months', lang)}] + [{'label': m, 'value': m} for m in TR[lang]['months']]
         
         return html.Div(className='view-fade-in', children=[
-            html.H2(_('anomaly_alerts', lang), className='section-title'),
+            html.H2(t('anomaly_alerts', lang), className='section-title'),
             html.Div(className='fintech-grid mb-4', **{'data-aos': 'fade-up'},
                      style={'gridTemplateColumns': '1fr 1fr', 'zIndex': '2'}, children=[
-                dcc.Dropdown(id='year-dd', className='fintech-dd', options=year_opts, value=_('all_years', lang), clearable=False),
-                dcc.Dropdown(id='month-dd', className='fintech-dd', options=month_opts, value=_('all_months', lang), clearable=False),
+                dcc.Dropdown(id='year-dd', className='fintech-dd', options=year_opts, value=t('all_years', lang), clearable=False),
+                dcc.Dropdown(id='month-dd', className='fintech-dd', options=month_opts, value=t('all_months', lang), clearable=False),
             ]),
             dcc.Loading(type='circle', color='#FFFFFF', children=html.Div(id='cards-container')),
         ])
@@ -816,7 +816,7 @@ def build_view(view_key, lang):
 
     elif view_key == "raw":
         return html.Div(className='view-fade-in', children=[
-            html.H2(_('raw_data_exp', lang), className='section-title'),
+            html.H2(t('raw_data_exp', lang), className='section-title'),
             html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=raw_table(lang))
         ])
 
@@ -869,7 +869,7 @@ def render_app(lang):
     c = 'app-container font-ar' if lang == 'ar' else 'app-container'
     
     top_n = html.Div(className='top-nav', children=[
-        html.Div(_('market_intel', lang), className='nav-title'),
+        html.Div(t('market_intel', lang), className='nav-title'),
         data_status_indicator(lang),
     ])
     
@@ -885,18 +885,18 @@ def render_app(lang):
 def update_chart(view, lang):
     if not DATA_OK: return no_update
     latest = DF.iloc[-1]
-    _, r_color = get_market_status(latest['Anomaly_Score'], latest['Threshold'], lang)
+    _status, r_color = get_market_status(latest['Anomaly_Score'], latest['Threshold'], lang)
     return build_figure(view, r_color, lang)
 
 
 @callback(Output('month-dd', 'options'), Output('month-dd', 'value'), Input('year-dd', 'value'), State('lang-store', 'data'))
 def update_months(year, lang):
-    opts = [{'label': _('all_months', lang), 'value': _('all_months', lang)}]
-    if DATA_OK and year and year != _('all_years', lang):
+    opts = [{'label': t('all_months', lang), 'value': t('all_months', lang)}]
+    if DATA_OK and year and year != t('all_years', lang):
         flags = DF[DF['Flagged'] == True]
         months = sorted(flags[flags.index.year == int(year)].index.month.unique())
         opts += [{'label': TR[lang]['months'][m - 1], 'value': TR[lang]['months'][m - 1]} for m in months]
-    return opts, _('all_months', lang)
+    return opts, t('all_months', lang)
 
 
 @callback(Output('cards-container', 'children'), Input('year-dd', 'value'), Input('month-dd', 'value'), State('lang-store', 'data'))
