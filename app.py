@@ -71,6 +71,7 @@ TR = {
         'showing_recent': 'Showing most recent 60 matches.', 'no_anomaly': 'No anomaly days match this filter.',
         'all_years': 'All Years', 'all_months': 'All Months', 'status_normal': 'Normal', 'status_elevated': 'Elevated',
         'status_stress': 'Stress', 'status_crisis': 'Crisis',
+        'alert_moderate': 'Moderate', 'alert_severe': 'Severe',
         'narrative_calm': "Markets look calm today — no unusual stress detected. The current status is {status}. Normal background activity is mainly driven by {driver}.",
         'narrative_warn': "Caution: Market stress is unusually high right now. The current status is {status}, primarily driven by sudden moves in {driver} ({pct:.0f}% of the activity). Keep an eye on conditions.",
         'chart_score': 'Anomaly Score', 'chart_limit': 'Threshold Limit', 'anomaly': 'Anomaly', 'fetch_failed': 'Fetch Failed',
@@ -117,6 +118,7 @@ TR = {
         'showing_recent': 'عرض أحدث 60 نتيجة.', 'no_anomaly': 'لا توجد تنبيهات مطابقة.',
         'all_years': 'كل السنوات', 'all_months': 'كل الأشهر', 'status_normal': 'طبيعي', 'status_elevated': 'مرتفع',
         'status_stress': 'ضغط', 'status_crisis': 'أزمة',
+        'alert_moderate': 'متوسط', 'alert_severe': 'شديد',
         'narrative_calm': "تبدو الأسواق هادئة اليوم — لم نكتشف أي ضغط غير عادي. الحالة الحالية {status}. النشاط الطبيعي مدفوع بشكل رئيسي بـ {driver}.",
         'narrative_warn': "تحذير: ضغط السوق مرتفع جداً الآن. الحالة الحالية {status}، مدفوعة بحركات مفاجئة في {driver} ({pct:.0f}% من النشاط). يرجى المراقبة.",
         'chart_score': 'درجة المؤشر', 'chart_limit': 'حد التنبيه', 'anomaly': 'تنبيه شذوذ', 'fetch_failed': 'فشل التحديث',
@@ -537,7 +539,7 @@ def alert_card(date_idx, row):
     days_ago = (datetime.now() - date_idx.to_pydatetime().replace(tzinfo=None)).days
     
     is_severe = row['Anomaly_Score'] > row['Threshold'] * 1.3
-    sev_label = html.Span([html.Span(t('status_crisis', 'en'), className='lang-en'), html.Span(t('status_crisis', 'ar'), className='lang-ar')]) if is_severe else html.Span([html.Span(t('status_stress', 'en'), className='lang-en'), html.Span(t('status_stress', 'ar'), className='lang-ar')])
+    sev_label = html.Span([html.Span(t('alert_severe', 'en'), className='lang-en'), html.Span(t('alert_severe', 'ar'), className='lang-ar')]) if is_severe else html.Span([html.Span(t('alert_moderate', 'en'), className='lang-en'), html.Span(t('alert_moderate', 'ar'), className='lang-ar')])
     sev = DANGER if is_severe else WARN
 
     contribs = {s: row.get(f'{s}_Contribution', np.nan) for s in SIGNALS}
@@ -720,7 +722,6 @@ def sidebar():
         ]),
         html.Div(nav, className='nav-menu'),
         html.Div(className='sidebar-foot', children=[
-            html.Div(className='live-pill', children=[html.Span(className='status-dot'), html.Span("LIVE", className='live-pill-text')]),
             html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
         ]),
     ])
@@ -857,7 +858,6 @@ def build_layout():
         sidebar(),
         html.Div(className='main-content', children=[
             html.Div(className='top-nav', children=[
-                html.Div(trans('market_intel'), className='nav-title'),
                 html.Div(className='status-indicator', children=[
                     html.Span(className='status-dot', style={'background': POS if ok else DANGER, 'boxShadow': f'0 0 10px {POS if ok else DANGER}'}),
                     html.Span(trans('live_data' if ok else 'data_error'), className='status-src')
@@ -872,7 +872,9 @@ app.layout = build_layout
 # ─────────────────────────────────────────────────────────────────────────────
 #  CALLBACKS
 # ─────────────────────────────────────────────────────────────────────────────
-@callback(Output('anomaly-chart', 'figure'), Input('range-dd', 'value'), State('root-container', 'className'))
+
+# Allow duplicate outputs safely since timeline chart populates on initial render
+@callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
 def update_chart(view, current_class):
     if not DATA_OK: return no_update
     lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
@@ -969,7 +971,7 @@ app.clientside_callback(
     Output('root-container', 'dir'),
     Output('root-container', 'className'),
     Output('overview-chart', 'figure'),
-    Output('anomaly-chart', 'figure'),
+    Output('anomaly-chart', 'figure', allow_duplicate=True),
     Output('contrib-chart', 'figure'),
     Input('lang-toggle', 'n_clicks'),
     State('tr-store', 'data'),
@@ -980,10 +982,11 @@ app.clientside_callback(
     prevent_initial_call=True
 )
 
-# View Switching & Collapse
+# View Switching
 app.clientside_callback(
     """
     function(clicks) {
+        if (!clicks || clicks.every(function(c) { return !c; })) return window.dash_clientside.no_update;
         var cbctx = window.dash_clientside.callback_context;
         var key = 'overview';
         if (cbctx && cbctx.triggered && cbctx.triggered.length && cbctx.triggered[0].value) {
@@ -1001,6 +1004,7 @@ app.clientside_callback(
     Output('nav-dummy', 'data'), Input({'type': 'nav', 'index': ALL}, 'n_clicks')
 )
 
+# Sidebar Collapse
 app.clientside_callback(
     """
     function(n_clicks) {
