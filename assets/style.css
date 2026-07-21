@@ -33,38 +33,60 @@ svg { display: block; }
 .app-container { display: flex; min-height: 100vh; overflow-x: hidden; }
 .main-content { flex: 1; min-width: 0; padding: 24px 36px 60px; max-width: 1400px; margin: 0 auto; transition: padding 0.3s var(--ease); }
 
-/* Sidebar & Collapse States */
-.sidebar { width: 240px; flex-shrink: 0; border-right: 1px solid var(--glass-border); background: var(--bg-surface); padding: 28px 20px; display: flex; flex-direction: column; gap: 28px; transition: width 0.3s var(--ease), padding 0.3s var(--ease); overflow: hidden; position: relative; z-index: 10; }
-.sidebar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; transition: all 0.3s var(--ease); }
-.brand-logo { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 15px; letter-spacing: -0.02em; }
-.logo-left { display: flex; align-items: center; gap: 10px; }
+/* Sidebar & Transitions */
+.sidebar { width: 240px; flex-shrink: 0; border-right: 1px solid var(--glass-border); background: var(--bg-surface); padding: 28px 20px; display: flex; flex-direction: column; gap: 28px; transition: width 0.3s var(--ease), padding 0.3s var(--ease); overflow: hidden; position: relative; z-index: 10; white-space: nowrap; }
+
+/* Top Branding Area */
+.sidebar-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; transition: all 0.3s var(--ease); width: 100%; }
+.brand-logo { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 15px; letter-spacing: -0.02em; width: 100%; transition: all 0.3s var(--ease); }
+
+/* Logo Sizing and Animation */
+.logo-left { display: flex; align-items: center; gap: 10px; transition: gap 0.3s var(--ease); }
 .logo-img { width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0 !important; object-fit: contain; box-shadow: 0 0 0 1px var(--glass-border), 0 6px 18px rgba(0,0,0,0.5); transition: width 0.3s var(--ease), height 0.3s var(--ease), border-radius 0.3s var(--ease); }
-.brand-word { font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; font-size: 15px; white-space: nowrap; }
-.collapse-btn { background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; transition: background 0.2s var(--ease), color 0.2s var(--ease); }
+
+/* Smooth Fading Elements */
+.brand-word { 
+    font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; font-size: 15px; 
+    white-space: nowrap; max-width: 100px; opacity: 1; overflow: hidden;
+    transition: max-width 0.3s var(--ease), opacity 0.15s ease-out;
+}
+.nav-label { 
+    white-space: nowrap; display: inline-block; max-width: 120px; opacity: 1; overflow: hidden;
+    transition: max-width 0.3s var(--ease), opacity 0.15s ease-out; 
+}
+.live-pill { 
+    display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 99px; background: var(--glass-hover); border: 1px solid var(--glass-border); font-size: 10.5px; font-weight: 600; letter-spacing: 1px; color: var(--text-secondary); 
+    max-width: 120px; opacity: 1; overflow: hidden; white-space: nowrap;
+    transition: max-width 0.3s var(--ease), opacity 0.15s ease-out, padding 0.3s var(--ease), gap 0.3s var(--ease), border-width 0.3s var(--ease);
+}
+
+.collapse-btn { background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; transition: background 0.2s var(--ease), color 0.2s var(--ease); margin-top: 8px; }
 .collapse-btn:hover { background: var(--glass-hover); color: var(--text-primary); }
-.collapse-btn * { pointer-events: none; } /* Prevents SVG icon from swallowing clicks */
+.collapse-btn * { pointer-events: none; }
 
+/* Collapsed Overrides */
 .app-container.collapsed .sidebar { width: 78px; padding-left: 16px; padding-right: 16px; }
-.app-container.collapsed .brand-word,
-.app-container.collapsed .nav-label,
-.app-container.collapsed .live-pill { display: none; }
 
-/* Keep button visible and stack cleanly under scaled-down logo */
-.app-container.collapsed .sidebar-top { flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
-.app-container.collapsed .brand-logo { justify-content: center; width: 100%; margin: 0; }
+/* Keep Toggle Button but Center it cleanly */
+.app-container.collapsed .brand-logo { flex-direction: column; justify-content: center; align-items: center; margin: 0; gap: 12px; }
+.app-container.collapsed .collapse-btn { margin-top: 0; }
+.app-container.collapsed .logo-left { gap: 0; justify-content: center; }
 .app-container.collapsed .logo-img { width: 40px; height: 40px; border-radius: 10px; }
-.app-container.collapsed .nav-item { justify-content: center; padding: 10px; }
+
+/* Fade out internal labels rather than using display: none */
+.app-container.collapsed .brand-word { max-width: 0; opacity: 0; }
+.app-container.collapsed .nav-label { max-width: 0; opacity: 0; }
+.app-container.collapsed .live-pill { max-width: 0; opacity: 0; padding: 0; gap: 0; border-width: 0; }
 
 /* Nav Menu */
 .nav-menu { display: flex; flex-direction: column; gap: 6px; }
-.nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px; color: var(--text-secondary); font-size: 13.5px; font-weight: 500; cursor: pointer; transition: all 0.2s var(--ease); white-space: nowrap; }
-.nav-item .ico { width: 16px; text-align: center; }
+.nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px; color: var(--text-secondary); font-size: 13.5px; font-weight: 500; cursor: pointer; transition: all 0.3s var(--ease); white-space: nowrap; }
+.nav-item .ico { width: 16px; text-align: center; flex-shrink: 0; }
 .nav-item:hover { background: var(--glass-hover); color: var(--text-primary); }
 .nav-item.active { background: rgba(92, 107, 255, 0.12); color: var(--accent); font-weight: 600; }
+.app-container.collapsed .nav-item { justify-content: center; padding: 10px; gap: 0; }
 .nav-ico-wrap { display: flex; align-items: center; color: currentColor; flex-shrink: 0; }
-.nav-label { white-space: nowrap; }
 .sidebar-foot { margin-top: auto; }
-.live-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 99px; background: var(--glass-hover); border: 1px solid var(--glass-border); font-size: 10.5px; font-weight: 600; letter-spacing: 1px; color: var(--text-secondary); }
 
 /* Top Nav */
 .top-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
