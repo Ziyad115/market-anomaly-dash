@@ -25,18 +25,18 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg-base); color: var(--text-primary); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 a { text-decoration: none; color: inherit; }
-
-/* SVG Defs for Graphs */
 svg { display: block; }
 
+/* ── Arabic Font Support ── */
+.font-ar { font-family: 'Thmanyah Sans', var(--font-sans); }
+
 /* Layout */
-.app-container { display: flex; min-height: 100vh; overflow-x: hidden; }
+.app-container { display: flex; min-height: 100vh; overflow-x: hidden; direction: ltr; }
 .main-content { flex: 1; min-width: 0; padding: 24px 36px 60px; max-width: 1400px; margin: 0 auto; transition: padding 0.3s var(--ease); }
 
-/* Sidebar & Transitions */
-.sidebar { width: 240px; flex-shrink: 0; border-right: 1px solid var(--glass-border); background: var(--bg-surface); padding: 28px 20px; display: flex; flex-direction: column; gap: 28px; transition: width 0.3s var(--ease), padding 0.3s var(--ease); overflow: hidden; position: relative; z-index: 10; white-space: nowrap; }
+/* ── Sidebar & Transitions (Using Logical Properties) ── */
+.sidebar { width: 240px; flex-shrink: 0; border-inline-end: 1px solid var(--glass-border); background: var(--bg-surface); padding: 28px 20px; display: flex; flex-direction: column; gap: 28px; transition: width 0.3s var(--ease), padding 0.3s var(--ease); overflow: hidden; position: relative; z-index: 10; white-space: nowrap; }
 
-/* Top Branding Area */
 .sidebar-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; transition: all 0.3s var(--ease); width: 100%; }
 .brand-logo { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 15px; letter-spacing: -0.02em; width: 100%; transition: all 0.3s var(--ease); }
 
@@ -59,13 +59,16 @@ svg { display: block; }
     max-width: 120px; opacity: 1; overflow: hidden; white-space: nowrap;
     transition: max-width 0.3s var(--ease), opacity 0.15s ease-out, padding 0.3s var(--ease), gap 0.3s var(--ease), border-width 0.3s var(--ease);
 }
+.live-pill-text { transition: opacity 0.15s; }
+.lang-toggle-btn { background: transparent; border: 1px solid var(--glass-border); color: var(--text-primary); border-radius: 6px; padding: 6px 10px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: var(--font-sans); flex-shrink: 0; }
+.lang-toggle-btn:hover { background: var(--glass-hover); }
 
 .collapse-btn { background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; transition: background 0.2s var(--ease), color 0.2s var(--ease); margin-top: 8px; }
 .collapse-btn:hover { background: var(--glass-hover); color: var(--text-primary); }
 .collapse-btn * { pointer-events: none; }
 
-/* Collapsed Overrides */
-.app-container.collapsed .sidebar { width: 78px; padding-left: 16px; padding-right: 16px; }
+/* ── Collapsed Overrides ── */
+.app-container.collapsed .sidebar { width: 78px; padding-inline: 16px; }
 
 /* Keep Toggle Button but Center it cleanly */
 .app-container.collapsed .brand-logo { flex-direction: column; justify-content: center; align-items: center; margin: 0; gap: 12px; }
@@ -73,10 +76,11 @@ svg { display: block; }
 .app-container.collapsed .logo-left { gap: 0; justify-content: center; }
 .app-container.collapsed .logo-img { width: 40px; height: 40px; border-radius: 10px; }
 
-/* Fade out internal labels rather than using display: none */
+/* Fade out internal labels */
 .app-container.collapsed .brand-word { max-width: 0; opacity: 0; }
-.app-container.collapsed .nav-label { max-width: 0; opacity: 0; }
+.app-container.collapsed .nav-label { max-width: 0; opacity: 0; margin: 0; }
 .app-container.collapsed .live-pill { max-width: 0; opacity: 0; padding: 0; gap: 0; border-width: 0; }
+.app-container.collapsed .live-pill-text { display: none; }
 
 /* Nav Menu */
 .nav-menu { display: flex; flex-direction: column; gap: 6px; }
@@ -86,7 +90,7 @@ svg { display: block; }
 .nav-item.active { background: rgba(92, 107, 255, 0.12); color: var(--accent); font-weight: 600; }
 .app-container.collapsed .nav-item { justify-content: center; padding: 10px; gap: 0; }
 .nav-ico-wrap { display: flex; align-items: center; color: currentColor; flex-shrink: 0; }
-.sidebar-foot { margin-top: auto; }
+.sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 12px; align-items: center; }
 
 /* Top Nav */
 .top-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
@@ -115,7 +119,7 @@ svg { display: block; }
 .delta { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 500; }
 .hero-timestamp { font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono); }
 
-/* Grid Layouts (Tightened) */
+/* Grid Layouts */
 .fintech-grid { display: grid; gap: 16px; margin-bottom: 16px; position: relative; z-index: 1; }
 .layout-row-2 { grid-template-columns: 1fr 1fr; }
 .kpi-row { grid-template-columns: 1.5fr 1fr 1fr 1fr; }
@@ -139,27 +143,10 @@ svg { display: block; }
 .kpi-card.large .kpi-value { font-size: 28px; }
 .kpi-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 6px; }
 
-/* ── DASH DROPDOWNS (FIXED OVERLAPPING SEARCH INPUT) ── */
-.dash-dropdown { 
-    background: transparent !important; 
-    border: none !important; 
-    min-height: 40px; 
-}
-.fintech-dd .Select-control { 
-    background: var(--glass-bg) !important; 
-    border: 1px solid var(--glass-border) !important; 
-    border-radius: 8px !important; 
-    min-height: 40px; 
-    color: var(--text-primary) !important; 
-    box-shadow: none !important; 
-}
-.fintech-dd .Select-menu-outer { 
-    background: var(--bg-surface) !important; 
-    border: 1px solid var(--glass-border) !important; 
-    border-radius: 8px !important; 
-    margin-top: 6px; 
-    z-index: 9999 !important; /* Critical for dropdown overlap */
-}
+/* ── DASH DROPDOWNS ── */
+.dash-dropdown { background: transparent !important; border: none !important; min-height: 40px; }
+.fintech-dd .Select-control { background: var(--glass-bg) !important; border: 1px solid var(--glass-border) !important; border-radius: 8px !important; min-height: 40px; color: var(--text-primary) !important; box-shadow: none !important; }
+.fintech-dd .Select-menu-outer { background: var(--bg-surface) !important; border: 1px solid var(--glass-border) !important; border-radius: 8px !important; margin-top: 6px; z-index: 9999 !important; }
 .dash-dropdown-wrapper, .dash-dropdown-content, .dash-dropdown-trigger { background: transparent !important; border: none !important; color: var(--text-primary) !important; width: 100%; }
 .dash-dropdown-value, .dash-dropdown-value-item, .dash-dropdown-value-count { color: var(--text-primary) !important; }
 .dash-dropdown-search, .dash-dropdown-search input { color: var(--text-primary) !important; background: transparent !important; border: none !important; }
@@ -176,17 +163,17 @@ svg { display: block; }
 .alert-body { flex: 1; padding: 16px 20px; }
 .alert-row1 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .alert-date { font-size: 15px; font-weight: 600; }
-.sev-pill { font-size: 10px; font-weight: 600; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; margin-left: 10px; }
+.sev-pill { font-size: 10px; font-weight: 600; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; margin-inline-start: 10px; }
 .alert-score { font-family: var(--font-mono); font-size: 18px; font-weight: 600; }
 .alert-stats { display: flex; gap: 10px; flex-wrap: wrap; }
 .stat { background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); border-radius: 6px; padding: 6px 10px; }
 .stat-k { font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; font-weight: 500; margin-bottom: 2px; }
 .stat-v { font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
 
-.fintech-table { width: 100%; border-collapse: collapse; text-align: left; }
-.fintech-table th { font-size: 11px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; padding: 12px; border-bottom: 1px solid var(--glass-border); }
-.fintech-table td { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 13px; color: var(--text-primary); }
-.mono { font-family: var(--font-mono); }
+.fintech-table { width: 100%; border-collapse: collapse; text-align: start; }
+.fintech-table th { font-size: 11px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; padding: 12px; border-bottom: 1px solid var(--glass-border); text-align: start; }
+.fintech-table td { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 13px; color: var(--text-primary); text-align: start; }
+.mono { font-family: var(--font-mono); direction: ltr; display: inline-block; }
 .badge.success { background: rgba(0,229,153,0.1); color: var(--success); }
 .badge.error { background: rgba(255,75,75,0.1); color: var(--danger); }
 
@@ -223,8 +210,6 @@ svg { display: block; }
 .method-title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
 .method-p { font-size: 15px; line-height: 1.75; color: var(--text-secondary); margin: 0 0 14px 0; max-width: 860px; }
 .method-p:last-child { margin-bottom: 0; }
-.method-p b { color: var(--text-primary); font-weight: 600; }
-.method-p i { color: var(--text-primary); font-style: italic; }
 
 /* ── RESPONSIVE ADD-ONS ───────────────────────────────────── */
 @media (max-width: 1024px) {
@@ -233,7 +218,7 @@ svg { display: block; }
 }
 @media (max-width: 768px) {
     .app-container { flex-direction: column; }
-    .app-container.collapsed .sidebar, .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--glass-border); padding: 16px; flex-direction: row; align-items: center; justify-content: space-between; height: auto; }
+    .app-container.collapsed .sidebar, .sidebar { width: 100%; border-inline-end: none; border-bottom: 1px solid var(--glass-border); padding: 16px; flex-direction: row; align-items: center; justify-content: space-between; height: auto; }
     .nav-menu { flex-direction: row; overflow-x: auto; gap: 4px; }
     .nav-item { padding: 8px 12px; }
     .nav-label { display: block; }
