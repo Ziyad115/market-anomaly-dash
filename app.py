@@ -2,12 +2,9 @@ import os
 import urllib.parse
 import xml.etree.ElementTree as ET
 import json
-import threading
 import concurrent.futures
 import traceback
-import pickle
 import tempfile
-import random
 from datetime import datetime, timedelta
 from functools import lru_cache
 
@@ -85,7 +82,7 @@ TR = {
         'status_stress': 'Stress', 'status_crisis': 'Crisis',
         'alert_moderate': 'Moderate', 'alert_severe': 'Severe',
         'narrative_calm': "Markets look calm today — no unusual stress detected. The current status is {status}. Normal background activity is mainly driven by {driver}.",
-        'narrative_warn': "Caution: Market stress is unusually high right now. The current status is {status}, primarily driven by sudden moves in {driver} ({pct}% of the activity). Keep an eye on conditions.",
+        'narrative_warn': "Caution: Market stress is unusually high right now. The current status is {status}, primarily driven by sudden moves in {driver} ({pct:.0f}% of the activity). Keep an eye on conditions.",
         'chart_score': 'Anomaly Score', 'chart_limit': 'Threshold Limit', 'anomaly': 'Anomaly', 'fetch_failed': 'Fetch Failed',
         'module_not_installed': 'Module not installed', 'unavailable': 'Unavailable', 'days_ago_suffix': 'days ago',
         'score_label': 'Market Anomaly Score', 'lang_btn': 'عربي', 'toggle_sidebar': 'Toggle Sidebar',
@@ -132,7 +129,7 @@ TR = {
         'status_stress': 'ضغط', 'status_crisis': 'أزمة',
         'alert_moderate': 'متوسط', 'alert_severe': 'شديد',
         'narrative_calm': "تبدو الأسواق هادئة اليوم — لم نكتشف أي ضغط غير عادي. الحالة الحالية {status}. النشاط الطبيعي مدفوع بشكل رئيسي بـ {driver}.",
-        'narrative_warn': "تحذير: ضغط السوق مرتفع جداً الآن. الحالة الحالية {status}، مدفوعة بحركات مفاجئة في {driver} ({pct}% من النشاط). يرجى المراقبة.",
+        'narrative_warn': "تحذير: ضغط السوق مرتفع جداً الآن. الحالة الحالية {status}، مدفوعة بحركات مفاجئة في {driver} ({pct:.0f}% من النشاط). يرجى المراقبة.",
         'chart_score': 'درجة المؤشر', 'chart_limit': 'حد التنبيه', 'anomaly': 'تنبيه شذوذ', 'fetch_failed': 'فشل التحديث',
         'module_not_installed': 'الوحدة غير مثبتة', 'unavailable': 'غير متوفر', 'days_ago_suffix': 'أيام مضت',
         'score_label': 'مؤشر شذوذ السوق', 'lang_btn': 'EN', 'toggle_sidebar': 'طي/توسيع القائمة',
@@ -198,6 +195,32 @@ def tint(hex_color, alpha):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  GLOBAL STATE INITIALIZATION
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPORTANT: All globals accessed across multiple worker processes must be mapped here.
+DF = None
+DF_IF = None
+VAL = None
+VAL_IF = None
+AVAIL_YEARS = []
+SUMMARY = {}
+DATA_OK = False
+LOAD_ERR = ""
+TRADING_DAYS = 0
+LOADED_AT = "—"
+DATA_SOURCE = "unknown"
+
+# The global dictionary needed by fear_greed_kpi()
+FG_CACHE = {'timestamp': None, 'data': None}
+
+TEMP_DIR = tempfile.gettempdir()
+LOCK_FILE = os.path.join(TEMP_DIR, "anomaly_dash_init.lock")
+STATE_FILE = os.path.join(TEMP_DIR, "anomaly_dash_state.pkl")
+RAW_CACHE_FILE = os.path.join(TEMP_DIR, "anomaly_raw_prices.pkl")
+_LOCAL_CACHE_TS = 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  DATA LOGIC & ASYNC FETCHING
 # ─────────────────────────────────────────────────────────────────────────────
 def fetch_single_ticker(name, t_sym):
@@ -222,12 +245,14 @@ def fetch_single_ticker(name, t_sym):
 
 def fetch_fg():
     """Background fetcher for CNN Fear & Greed."""
+    global FG_CACHE
     if HAS_FG:
         try:
-            FG_CACHE['data'] = fear_and_greed.get()
+            val = fear_and_greed.get()
+            FG_CACHE['data'] = val
             FG_CACHE['timestamp'] = datetime.now()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[FG FETCH ERROR] {e}")
 
 def load_data():
     """Robust data loading with FRED fallbacks and local caching."""
@@ -422,25 +447,10 @@ def get_news_for_date(date_str, days_window=1):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  STARTUP & ASYNC STATE CACHE
+#  WORKER SYNC & INIT
 # ─────────────────────────────────────────────────────────────────────────────
-DF = DF_IF = None
-VAL = VAL_IF = None
-AVAIL_YEARS = []
-SUMMARY = {}
-DATA_OK = False
-LOAD_ERR = ""
-TRADING_DAYS = 0
-LOADED_AT = "—"
-
-TEMP_DIR = tempfile.gettempdir()
-LOCK_FILE = os.path.join(TEMP_DIR, "anomaly_dash_init.lock")
-STATE_FILE = os.path.join(TEMP_DIR, "anomaly_dash_state.pkl")
-RAW_CACHE_FILE = os.path.join(TEMP_DIR, "anomaly_raw_prices.pkl")
-_LOCAL_CACHE_TS = 0
-
 def sync_state():
-    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT, DATA_SOURCE, _LOCAL_CACHE_TS
+    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT, DATA_SOURCE, _LOCAL_CACHE_TS, FG_CACHE
     if not os.path.exists(STATE_FILE): return
     mtime = os.path.getmtime(STATE_FILE)
     if mtime > _LOCAL_CACHE_TS:
@@ -457,6 +467,7 @@ def sync_state():
             TRADING_DAYS = state.get('TRADING_DAYS')
             LOADED_AT = state.get('LOADED_AT')
             DATA_SOURCE = state.get('DATA_SOURCE')
+            FG_CACHE = state.get('FG_CACHE', {'timestamp': None, 'data': None})
             _LOCAL_CACHE_TS = mtime
             print(f"[SYNC] Worker synced state from disk (mtime: {mtime})")
         except Exception as e:
@@ -498,6 +509,7 @@ def init_data():
     DATA_OK = True
 
 def run_init_in_background():
+    global DATA_OK, LOAD_ERR
     if os.path.exists(LOCK_FILE):
         print("[INIT] Lock file exists. Another worker is already fetching data.")
         return
@@ -511,7 +523,8 @@ def run_init_in_background():
             'DF': DF, 'DF_IF': DF_IF, 'VAL': VAL, 'VAL_IF': VAL_IF,
             'AVAIL_YEARS': AVAIL_YEARS, 'SUMMARY': SUMMARY, 'DATA_OK': DATA_OK,
             'LOAD_ERR': LOAD_ERR, 'TRADING_DAYS': TRADING_DAYS, 
-            'LOADED_AT': LOADED_AT, 'DATA_SOURCE': DATA_SOURCE
+            'LOADED_AT': LOADED_AT, 'DATA_SOURCE': DATA_SOURCE,
+            'FG_CACHE': FG_CACHE
         }
         with open(STATE_FILE, "wb") as f:
             pickle.dump(state, f)
@@ -520,7 +533,9 @@ def run_init_in_background():
     except Exception as e:
         err = traceback.format_exc()
         print(f"[INIT ERROR] Exception during data load:\n{err}")
-        state = {'DATA_OK': False, 'LOAD_ERR': str(e)}
+        DATA_OK = False
+        LOAD_ERR = str(e)
+        state = {'DATA_OK': False, 'LOAD_ERR': str(e), 'FG_CACHE': FG_CACHE}
         with open(STATE_FILE, "wb") as f:
             pickle.dump(state, f)
     finally:
@@ -679,7 +694,7 @@ def fear_greed_kpi():
     fg_color = MUTE
     
     if HAS_FG:
-        if FG_CACHE.get('data'):
+        if FG_CACHE and FG_CACHE.get('data'):
             fg = FG_CACHE['data']
             fg_val_str = f"{fg.value:.0f}"
             desc_low = fg.description.lower()
@@ -731,7 +746,7 @@ def hero_section():
             html.Div(score_display, className='hero-score', style={'color': r_color, 'textShadow': f'0 0 32px {tint(r_color, 0.3)}'}),
             html.Div(className='hero-metrics', children=[
                 html.Span([delta_val, trans('vs_thresh')], className=delta_class, style={'color': r_color, 'backgroundColor': tint(r_color, 0.1)}),
-                html.Span([trans('last_updated'), f" {SUMMARY['updated']}"], className='hero-timestamp')
+                html.Span([trans('last_updated'), f" {SUMMARY.get('updated', '—')}"], className='hero-timestamp')
             ])
         ])
     ])
@@ -844,25 +859,26 @@ def build_cards(year, month):
 def validation_section():
     s = SUMMARY
     cards = html.Div(className='fintech-grid kpi-row', children=[
-        kpi_card('crisis_recall', f"{s['recall']:.0f}%", html.Span(f"{s['detected']} / {s['total_ev']}"), large=True, value_color=POS if s['recall'] >= 70 else WARN),
-        kpi_card('events_detected', f"{s['detected']}", 'within_7d'),
-        kpi_card('flagged_days', f"{s['total_flags']:,}", 'all_history'),
-        kpi_card('daily_flag_rate', f"{s['flag_rate']:.1f}%", 'of_trading_days'),
+        kpi_card('crisis_recall', f"{s.get('recall', 0):.0f}%", html.Span(f"{s.get('detected', 0)} / {s.get('total_ev', 0)}"), large=True, value_color=POS if s.get('recall', 0) >= 70 else WARN),
+        kpi_card('events_detected', f"{s.get('detected', 0)}", 'within_7d'),
+        kpi_card('flagged_days', f"{s.get('total_flags', 0):,}", 'all_history'),
+        kpi_card('daily_flag_rate', f"{s.get('flag_rate', 0):.1f}%", 'of_trading_days'),
     ])
 
     header_cells = [html.Th(trans('date')), html.Th(trans('hist_event')), html.Th(trans('composite')), html.Th(trans('nearest')), html.Th(trans('peak_score'))]
     
     body = []
-    for r in VAL:
-        hit = html.Span(trans('detected'), className='badge solid success') if r['detected'] else html.Span(trans('missed'), className='badge solid error')
-        nearest = html.Span([html.Span(f"{r['nearest']}d", className='lang-en'), html.Span(f"{r['nearest']} يوم", className='lang-ar')]) if r['nearest'] is not None else "—"
-        peak = f"{r['peak']:.2f}" if r['peak'] is not None else "—"
-        
-        evt_key = HISTORICAL_EVENTS.get(r['date'], r['event'])
-        event_trans = trans(evt_key) if evt_key in TR['en'] else r['event']
-        
-        cells = [html.Td(r['date'], className='mono'), html.Td(event_trans), html.Td(hit), html.Td(nearest, className='mono'), html.Td(peak, className='mono')]
-        body.append(html.Tr(cells))
+    if VAL:
+        for r in VAL:
+            hit = html.Span(trans('detected'), className='badge solid success') if r['detected'] else html.Span(trans('missed'), className='badge solid error')
+            nearest = html.Span([html.Span(f"{r['nearest']}d", className='lang-en'), html.Span(f"{r['nearest']} يوم", className='lang-ar')]) if r['nearest'] is not None else "—"
+            peak = f"{r['peak']:.2f}" if r['peak'] is not None else "—"
+            
+            evt_key = HISTORICAL_EVENTS.get(r['date'], r['event'])
+            event_trans = trans(evt_key) if evt_key in TR['en'] else r['event']
+            
+            cells = [html.Td(r['date'], className='mono'), html.Td(event_trans), html.Td(hit), html.Td(nearest, className='mono'), html.Td(peak, className='mono')]
+            body.append(html.Tr(cells))
 
     table = html.Table(className='fintech-table', children=[html.Thead(html.Tr(header_cells)), html.Tbody(body)])
 
@@ -1048,18 +1064,30 @@ def serve_layout():
 def build_view(view_key, lang='en'):
     if view_key == "overview":
         latest = DF.iloc[-1]
-        score, thresh = latest['Anomaly_Score'], latest['Threshold']
+        score, thresh = latest.get('Anomaly_Score', np.nan), latest.get('Threshold', np.nan)
         _, r_color = get_market_status(score, thresh, 'en')
         
+        try:
+            fig_overview = build_figure("Last 6 Months", r_color, 'en')
+        except Exception as e:
+            print(f"[CHART ERROR] overview-chart: {e}")
+            fig_overview = get_empty_fig()
+
         row_1 = html.Div(className='glass-card', style={'marginBottom': '24px'}, **{'data-aos': 'fade-up'}, children=[
             html.Div(trans('sys_stress'), className='card-title'),
-            html.Div(dir='ltr', children=[dcc.Graph(id='overview-chart', figure=build_figure("Last 6 Months", r_color, 'en'), config={'displayModeBar': False})])
+            html.Div(dir='ltr', children=[dcc.Graph(id='overview-chart', figure=fig_overview, config={'displayModeBar': False})])
         ])
+
+        try:
+            fig_contrib = build_contribution_chart(r_color, 'en')
+        except Exception as e:
+            print(f"[CHART ERROR] contrib-chart: {e}")
+            fig_contrib = get_empty_fig()
 
         row_2 = html.Div(className='fintech-grid layout-row-2', children=[
             html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('drivers_today'), className='card-title'),
-                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=get_empty_fig(), config={'displayModeBar': False})])
+                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=fig_contrib, config={'displayModeBar': False})])
             ]),
             html.Div(className='glass-card flex-col', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('market_narrative'), className='card-title'),
@@ -1067,11 +1095,36 @@ def build_view(view_key, lang='en'):
             ])
         ])
 
+        # Safely render each KPI independently
+        try:
+            fg_kpi_card = fear_greed_kpi()
+        except Exception as e:
+            print(f"[KPI ERROR] fear_greed_kpi: {e}")
+            fg_kpi_card = kpi_card('fg_index', trans('unavailable'), None, large=True, value_color=MUTE)
+            
+        try:
+            thresh_kpi_card = kpi_card('exp_thresh', f"{thresh:.2f}" if pd.notna(thresh) else "—", 'causal_mean', icon_name='lucide:git-branch')
+        except Exception as e:
+            print(f"[KPI ERROR] thresh_kpi_card: {e}")
+            thresh_kpi_card = kpi_card('exp_thresh', trans('unavailable'), 'causal_mean', icon_name='lucide:git-branch')
+
+        try:
+            freq_kpi_card = kpi_card('alert_freq', f"{SUMMARY.get('flag_rate', 0):.1f}%", 'all_time_rate', icon_name='lucide:activity')
+        except Exception as e:
+            print(f"[KPI ERROR] freq_kpi_card: {e}")
+            freq_kpi_card = kpi_card('alert_freq', trans('unavailable'), 'all_time_rate', icon_name='lucide:activity')
+            
+        try:
+            alerts_kpi_card = kpi_card('total_alerts', f"{SUMMARY.get('total_flags', 0)}", 'hist_events', icon_name='lucide:bell-ring', value_color=ACCENT)
+        except Exception as e:
+            print(f"[KPI ERROR] alerts_kpi_card: {e}")
+            alerts_kpi_card = kpi_card('total_alerts', trans('unavailable'), 'hist_events', icon_name='lucide:bell-ring', value_color=ACCENT)
+
         row_3 = html.Div(className='fintech-grid kpi-row', children=[
-            fear_greed_kpi(),
-            kpi_card('exp_thresh', f"{thresh:.2f}" if pd.notna(thresh) else "—", 'causal_mean', icon_name='lucide:git-branch'),
-            kpi_card('alert_freq', f"{SUMMARY['flag_rate']:.1f}%", 'all_time_rate', icon_name='lucide:activity'),
-            kpi_card('total_alerts', f"{SUMMARY['total_flags']}", 'hist_events', icon_name='lucide:bell-ring', value_color=ACCENT),
+            fg_kpi_card,
+            thresh_kpi_card,
+            freq_kpi_card,
+            alerts_kpi_card,
         ])
 
         return html.Div(className='view-fade-in', children=[hero_section(), row_1, row_2, row_3])
@@ -1163,19 +1216,6 @@ def switch_view(n_clicks, current_class):
     nav_classes = ['nav-item active' if key == view_key else 'nav-item' for key in VIEWS]
     
     return view_html, nav_classes
-
-@callback(
-    Output('contrib-chart', 'figure'),
-    Input('render-interval', 'n_intervals'),
-    State('root-container', 'className'),
-    prevent_initial_call=True
-)
-def load_deferred_charts(n, current_class):
-    if not DATA_OK: return no_update
-    lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
-    latest = DF.iloc[-1]
-    _, r_color = get_market_status(latest['Anomaly_Score'], latest['Threshold'], lang)
-    return build_contribution_chart(r_color, lang)
 
 @callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
 def update_timeline_chart(view, current_class):
