@@ -130,7 +130,7 @@ svg { display: block; }
 .nav-item.active { background: rgba(92, 107, 255, 0.12); color: var(--accent); font-weight: 600; }
 .nav-ico-wrap { display: flex; align-items: center; color: currentColor; flex-shrink: 0; }
 
-/* Top Nav (Removed extra title, pinned pill to right) */
+/* Top Nav */
 .top-nav { display: flex; justify-content: flex-end; align-items: center; margin-bottom: 28px; }
 .status-indicator { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; color: var(--success); padding: 5px 10px; border-radius: 99px; background: rgba(0, 229, 153, 0.08); border: 1px solid rgba(0, 229, 153, 0.2); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 8px var(--success); }
@@ -232,16 +232,22 @@ svg { display: block; }
 .view { width: 100%; }
 .ico-fallback { background: currentColor; opacity: 0.25; border-radius: 3px; }
 
-/* Methodology Block */
-.method-lead { font-size: 16px; line-height: 1.6; color: var(--text-secondary); max-width: 800px; margin: 0 0 24px 0; }
+/* ── DATA STATUS PANEL (methodology) ──────────────────────── */
+.status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 20px; }
+.status-cell { display: flex; flex-direction: column; gap: 6px; }
+.status-key { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); font-weight: 500; }
+.status-val { font-size: 16px; font-weight: 600; font-family: var(--font-mono); letter-spacing: -0.01em; }
+
+/* ── METHODOLOGY VIEW ─────────────────────────────────────── */
+.method-lead { font-size: 17px; line-height: 1.6; color: var(--text-secondary); max-width: 760px; margin: 0 0 24px 0; }
 .method-block { margin-bottom: 20px; }
 .method-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 .method-ico { width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); flex-shrink: 0; }
-.method-title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
-.method-p { font-size: 14px; line-height: 1.7; color: var(--text-secondary); margin: 0 0 14px 0; max-width: 860px; }
+.method-title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+.method-p { font-size: 15px; line-height: 1.75; color: var(--text-secondary); margin: 0 0 14px 0; max-width: 860px; }
 .method-p:last-child { margin-bottom: 0; }
 
-/* Responsive */
+/* ── RESPONSIVE ADD-ONS ───────────────────────────────────── */
 @media (max-width: 1024px) {
     .layout-row-2 { grid-template-columns: 1fr; }
     .kpi-row { grid-template-columns: 1fr 1fr; }
@@ -256,5 +262,7 @@ svg { display: block; }
     .main-content { padding: 20px 16px; }
     .hero-score { font-size: 48px; }
     .kpi-row { grid-template-columns: 1fr; }
+    .status-grid { grid-template-columns: 1fr 1fr; }
+    .method-lead { font-size: 15px; }
     .nav-extra { padding: 0 4px; margin: 0; align-items: center; }
 }
