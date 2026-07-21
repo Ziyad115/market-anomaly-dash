@@ -52,12 +52,12 @@ MUTE = "#6B7280"
 TR = {
     'en': {
         'overview': 'Overview', 'timeline': 'Timeline', 'alerts': 'Alerts', 'validation': 'Validation', 
-        'methodology': 'Methodology', 'raw_data': 'Raw Data', 'sys_stress': 'Systemic Stress Timeline',
-        'current_status': 'Current Status', 'thresh_limit': 'Threshold limit:', 'drivers_today': "Drivers of Today's Score",
-        'market_narrative': 'Market Summary', 'fg_index': 'Fear & Greed Index', 'exp_thresh': 'Dynamic Threshold',
-        'causal_mean': 'Trailing mean + 2σ', 'alert_freq': 'Alert Frequency', 'all_time_rate': 'All-time rate',
-        'total_alerts': 'Total Alerts', 'hist_events': 'Historical events', 'full_timeline': 'Full Anomaly Timeline',
-        'anomaly_alerts': 'Anomaly Alerts', 'model_val': 'Model Validation & Backtest', 'raw_data_exp': 'Raw Data Explorer',
+        'methodology': 'Methodology', 'raw': 'Raw Data', 'raw_data_exp': 'Raw Data Explorer',
+        'sys_stress': 'Systemic Stress Timeline', 'current_status': 'Current Status', 'thresh_limit': 'Threshold limit:', 
+        'drivers_today': "Drivers of Today's Score", 'market_narrative': 'Market Summary', 'fg_index': 'Fear & Greed Index', 
+        'exp_thresh': 'Dynamic Threshold', 'causal_mean': 'Trailing mean + 2σ', 'alert_freq': 'Alert Frequency', 
+        'all_time_rate': 'All-time rate', 'total_alerts': 'Total Alerts', 'hist_events': 'Historical events', 
+        'full_timeline': 'Full Anomaly Timeline', 'anomaly_alerts': 'Anomaly Alerts', 'model_val': 'Model Validation & Backtest',
         'live_data': 'Live Data', 'data_error': 'Data Error', 'market_intel': 'Market Intelligence',
         'confidence': 'Confidence:', 'status': 'Status:', 'last_updated': 'Last updated:', 'vs_thresh': 'vs Threshold',
         'pipeline_status': 'Pipeline status', 'operational': 'Operational', 'degraded': 'Degraded',
@@ -74,30 +74,36 @@ TR = {
         'narrative_calm': "Markets look calm today — no unusual stress detected. The current status is {status}. Normal background activity is mainly driven by {driver}.",
         'narrative_warn': "Caution: Market stress is unusually high right now. The current status is {status}, primarily driven by sudden moves in {driver} ({pct:.0f}% of the activity). Keep an eye on conditions.",
         'chart_score': 'Anomaly Score', 'chart_limit': 'Threshold Limit', 'anomaly': 'Anomaly', 'fetch_failed': 'Fetch Failed',
-        'module_not_installed': 'Module not installed', 'unavailable': 'Unavailable', 'days_ago': '{d}d ago',
+        'module_not_installed': 'Module not installed', 'unavailable': 'Unavailable', 'days_ago_suffix': 'days ago',
         'score_label': 'Market Anomaly Score', 'lang_btn': 'عربي', 'toggle_sidebar': 'Toggle Sidebar',
-        'months': ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+        
+        'january': 'January', 'february': 'February', 'march': 'March', 'april': 'April', 'may': 'May', 'june': 'June',
+        'july': 'July', 'august': 'August', 'september': 'September', 'october': 'October', 'november': 'November', 'december': 'December',
+        
         'assets': {'S&P500': 'S&P 500', 'Gold': 'Gold', 'Oil_WTI': 'Oil', 'USD_Index': 'USD', 'VIX': 'VIX'},
         'ranges': {'Last 6 Months': 'Last 6 Months', 'Last 2 Years': 'Last 2 Years', 'Full History (2005-Present)': 'Full History (2005-Present)'},
+        
         'evt_lehman': 'Lehman Brothers bankruptcy', 'evt_flash_crash': 'Flash Crash', 'evt_downgrade': 'US credit downgrade',
         'evt_china': 'China devaluation', 'evt_covid': 'COVID-19 Crash', 'evt_circuit': 'Circuit breakers halt',
         'evt_bear': 'S&P 500 bear market', 'evt_ukraine': 'Ukraine Invasion', 'evt_svb': 'SVB Collapse',
+        
         'method_lead': 'How this dashboard turns five noisy markets into a single, defensible measure of systemic stress...',
         'm_title_1': 'What it measures', 'm_p_1': 'Every trading day, the model asks one question: how unusual is today, across the whole market at once? It watches five instruments — the S&P 500, Gold, Oil, the US Dollar Index, and the VIX volatility index — because real crises rarely show up in a single asset. They show up as several markets moving strangely together.',
         'm_title_2': 'The composite score — an RMS z-score', 'm_p_2_1': 'Each market is first converted into a z-score: how many standard deviations today\'s move sits from its own recent 63-day norm. A z-score of 3 means a move roughly three times larger than what\'s been typical lately.', 'm_p_2_2': 'Those five z-scores are then combined into one number using the root-mean-square (RMS): we square each z-score, average them, and take the square root. Squaring means a single extreme market dominates the score.',
         'm_title_3': 'The threshold — causal, no look-ahead bias', 'm_p_3_1': 'A score only means something against a bar. The naive approach sets that bar using the mean and standard deviation of the entire history — but that secretly lets the future decide what counted as anomalous in the past.', 'm_p_3_2': 'Instead, the threshold here is an expanding, causal mean + 2σ: on any given day it is computed only from the scores that came strictly before it. Early history faces a calmer bar, and later years face a bar already raised by 2008 and 2020.',
         'm_title_4': 'The Isolation Forest cross-check', 'm_p_4_1': 'As an independent second opinion, the app runs an Isolation Forest — an unsupervised machine-learning model that flags points which are easy to isolate from the rest of the data.', 'm_p_4_2': 'When both methods agree a day is anomalous, that\'s a strong, model-agnostic signal. When they disagree, it\'s a prompt to look closer.',
         'm_title_5': 'How to read the results — and the limits', 'm_p_5_1': 'Treat the score as a thermometer, not a crystal ball. A crossing means conditions are statistically unusual relative to the recent past — it is a prompt to investigate, not a trade signal.', 'm_p_5_2': 'Honest caveats: z-scores assume moves are roughly comparable over time, so structural regime shifts can distort them. The model is deliberately simple and auditable — that transparency is the point.',
+        
         'fg_ext_fear': 'Extreme Fear', 'fg_fear': 'Fear', 'fg_neutral': 'Neutral', 'fg_greed': 'Greed', 'fg_ext_greed': 'Extreme Greed',
     },
     'ar': {
         'overview': 'نظرة عامة', 'timeline': 'السجل الزمني', 'alerts': 'التنبيهات', 'validation': 'تقييم النموذج', 
-        'methodology': 'المنهجية', 'raw_data': 'البيانات الخام', 'sys_stress': 'مؤشر الضغط النظامي',
-        'current_status': 'الحالة الحالية', 'thresh_limit': 'حد التنبيه:', 'drivers_today': "العوامل المؤثرة اليوم",
-        'market_narrative': 'ملخص حالة السوق', 'fg_index': 'مؤشر الخوف والطمع', 'exp_thresh': 'الحد الديناميكي',
-        'causal_mean': 'المتوسط التراكمي + 2σ', 'alert_freq': 'معدل التنبيهات', 'all_time_rate': 'تاريخياً',
-        'total_alerts': 'إجمالي التنبيهات', 'hist_events': 'أحداث تاريخية', 'full_timeline': 'السجل الزمني الكامل',
-        'anomaly_alerts': 'سجل التنبيهات', 'model_val': 'دقة وتقييم النموذج', 'raw_data_exp': 'استكشاف البيانات الخام',
+        'methodology': 'المنهجية', 'raw': 'البيانات الخام', 'raw_data_exp': 'استكشاف البيانات الخام',
+        'sys_stress': 'مؤشر الضغط النظامي', 'current_status': 'الحالة الحالية', 'thresh_limit': 'حد التنبيه:', 
+        'drivers_today': "العوامل المؤثرة اليوم", 'market_narrative': 'ملخص حالة السوق', 'fg_index': 'مؤشر الخوف والطمع', 
+        'exp_thresh': 'الحد الديناميكي', 'causal_mean': 'المتوسط التراكمي + 2σ', 'alert_freq': 'معدل التنبيهات', 
+        'all_time_rate': 'تاريخياً', 'total_alerts': 'إجمالي التنبيهات', 'hist_events': 'أحداث تاريخية', 
+        'full_timeline': 'السجل الزمني الكامل', 'anomaly_alerts': 'سجل التنبيهات', 'model_val': 'دقة وتقييم النموذج',
         'live_data': 'بيانات مباشرة', 'data_error': 'خطأ في البيانات', 'market_intel': 'ذكاء الأسواق',
         'confidence': 'مستوى الثقة:', 'status': 'الحالة:', 'last_updated': 'آخر تحديث:', 'vs_thresh': 'مقارنة بالحد',
         'pipeline_status': 'حالة الاتصال', 'operational': 'مستقر', 'degraded': 'متدهور',
@@ -114,20 +120,26 @@ TR = {
         'narrative_calm': "تبدو الأسواق هادئة اليوم — لم نكتشف أي ضغط غير عادي. الحالة الحالية {status}. النشاط الطبيعي مدفوع بشكل رئيسي بـ {driver}.",
         'narrative_warn': "تحذير: ضغط السوق مرتفع جداً الآن. الحالة الحالية {status}، مدفوعة بحركات مفاجئة في {driver} ({pct:.0f}% من النشاط). يرجى المراقبة.",
         'chart_score': 'درجة المؤشر', 'chart_limit': 'حد التنبيه', 'anomaly': 'تنبيه شذوذ', 'fetch_failed': 'فشل التحديث',
-        'module_not_installed': 'الوحدة غير مثبتة', 'unavailable': 'غير متوفر', 'days_ago': 'قبل {d} يوم',
+        'module_not_installed': 'الوحدة غير مثبتة', 'unavailable': 'غير متوفر', 'days_ago_suffix': 'أيام مضت',
         'score_label': 'مؤشر شذوذ السوق', 'lang_btn': 'EN', 'toggle_sidebar': 'طي/توسيع القائمة',
-        'months': ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"],
+        
+        'january': 'يناير', 'february': 'فبراير', 'march': 'مارس', 'april': 'أبريل', 'may': 'مايو', 'june': 'يونيو',
+        'july': 'يوليو', 'august': 'أغسطس', 'september': 'سبتمبر', 'october': 'أكتوبر', 'november': 'نوفمبر', 'december': 'ديسمبر',
+        
         'assets': {'S&P500': 'إس آند بي 500', 'Gold': 'الذهب', 'Oil_WTI': 'النفط', 'USD_Index': 'مؤشر الدولار', 'VIX': 'مؤشر التقلب (VIX)'},
         'ranges': {'Last 6 Months': 'آخر 6 أشهر', 'Last 2 Years': 'آخر سنتين', 'Full History (2005-Present)': 'التاريخ الكامل (2005-الآن)'},
+        
         'evt_lehman': 'إفلاس ليمان براذرز', 'evt_flash_crash': 'الانهيار الخاطف', 'evt_downgrade': 'تخفيض التصنيف الأمريكي',
         'evt_china': 'تخفيض قيمة اليوان', 'evt_covid': 'انهيار أسواق كوفيد', 'evt_circuit': 'توقف التداول',
         'evt_bear': 'سوق دببية لمؤشر S&P 500', 'evt_ukraine': 'غزو أوكرانيا', 'evt_svb': 'انهيار بنك SVB',
+        
         'method_lead': 'كيف تقوم هذه اللوحة بتحليل بيانات خمسة أسواق مختلفة لتحويلها إلى مقياس دقيق للضغط النظامي، ولماذا تعتبر الخيارات الإحصائية مهمة عند قراءة النتائج.',
         'm_title_1': 'ما الذي يتم قياسه؟', 'm_p_1': 'في كل يوم تداول، يطرح النموذج سؤالاً واحداً: ما مدى شذوذ تحركات اليوم عبر السوق بأكمله؟ يراقب النموذج خمسة أصول رئيسية — مؤشر S&P 500، الذهب، النفط، مؤشر الدولار، ومؤشر التقلب VIX — لأن الأزمات الحقيقية نادراً ما تقتصر على أصل واحد، بل تظهر كتحركات غير اعتيادية متزامنة في عدة أسواق.',
         'm_title_2': 'الدرجة المركبة (Z-Score)', 'm_p_2_1': 'أولاً، يتم تحويل أداء كل سوق إلى درجة معيارية (Z-Score) لقياس مدى انحرافه عن متوسط الـ 63 يومًا الماضية. الحصول على درجة 3 يعني أن التحرك أكبر بثلاث مرات من المعتاد.', 'm_p_2_2': 'بعد ذلك، تُدمج هذه الدرجات في رقم واحد باستخدام جذر متوسط المربعات (RMS). عملية التربيع تعني أن أي انحراف شديد في سوق واحد سيهيمن على الدرجة النهائية، وهو ما يعكس طبيعة الأزمات الحقيقية.',
         'm_title_3': 'الحد الديناميكي (تجنب الانحياز للمستقبل)', 'm_p_3_1': 'استخدام متوسط الانحراف لكل التاريخ لضبط حد التنبيه يعتبر خطأً إحصائياً، لأنه يسمح لأحداث المستقبل بالتأثير على تقييم الماضي (Look-ahead bias).', 'm_p_3_2': 'بدلاً من ذلك، يستخدم النموذج هنا حداً ديناميكياً يتوسع بمرور الوقت (المتوسط التراكمي + 2σ)، حيث يتم احتسابه يومياً باستخدام البيانات السابقة فقط. هذا يضمن أن تقييم الأزمات السابقة يتم بناءً على ما كان معروفاً في ذلك الوقت بدقة.',
         'm_title_4': 'نموذج العزل (Isolation Forest)', 'm_p_4_1': 'كوسيلة للتحقق المستقل، يشغل النظام نموذجاً للتعلم الآلي غير الخاضع للإشراف لتحديد النقاط التي يَسهُل "عزلها" إحصائياً عن بقية البيانات.', 'm_p_4_2': 'عندما يتفق كلا النموذجين على وجود شذوذ في يوم ما، فإن ذلك يمثل إشارة قوية وحيادية. وعندما يختلفان، يكون ذلك دافعاً للتحليل المتعمق.',
         'm_title_5': 'كيفية قراءة النتائج والقيود', 'm_p_5_1': 'تعامل مع هذه الدرجة كمقياس لحرارة الأسواق، وليس كأداة للتنبؤ. تجاوز الحد يعني أن الظروف استثنائية إحصائياً مقارنة بالماضي القريب — هي دعوة للمراقبة والتحقق وليست إشارة بيع أو شراء.', 'm_p_5_2': 'يجب ملاحظة أن النموذج يفترض أن التحركات قابلة للمقارنة بمرور الوقت، لذا فإن التغيرات الهيكلية قد تؤثر على الدرجات المعيارية. صُمم النموذج ليكون بسيطاً وقابلاً للتدقيق — وهذه الشفافية هي الهدف الأساسي.',
+        
         'fg_ext_fear': 'خوف شديد', 'fg_fear': 'خوف', 'fg_neutral': 'محايد', 'fg_greed': 'طمع', 'fg_ext_greed': 'طمع شديد',
     }
 }
@@ -142,6 +154,9 @@ def trans(key):
         html.Span(t(key, 'en'), className='lang-en'),
         html.Span(t(key, 'ar'), className='lang-ar')
     ])
+
+MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+               "July", "August", "September", "October", "November", "December"]
 
 ICO = {
     "activity": '<path d="M22 12h-4l-3 8L9 4l-3 8H2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
@@ -444,7 +459,7 @@ def kpi_card(label_key, value_component, sub_key, large=False, icon_name=None, v
             (html.Div(icon(icon_name, 18, MUTE), className='kpi-ico') if icon_name else None),
         ]),
         html.Div(value_component, className='kpi-value', style=v_style),
-        html.Div(trans(sub_key), className='kpi-sub'),
+        html.Div(trans(sub_key) if sub_key else "", className='kpi-sub'),
     ])
 
 def fear_greed_kpi():
@@ -503,6 +518,155 @@ def hero_section():
         ])
     ])
 
+def stat_chip(k_key, v_component, driver=False):
+    k_comp = trans(k_key) if isinstance(k_key, str) and k_key in TR['en'] else k_key
+    return html.Div(className='stat driver' if driver else 'stat', children=[
+        html.Div(k_comp, className='stat-k'), html.Div(v_component, className='stat-v')])
+
+def get_asset(asset_key, lang):
+    return TR[lang].get('assets', {}).get(asset_key, asset_key)
+
+def get_event(date_str):
+    if date_str in HISTORICAL_EVENTS:
+        k = HISTORICAL_EVENTS[date_str]
+        return html.Span([html.Span(t(k, 'en'), className='lang-en'), html.Span(t(k, 'ar'), className='lang-ar')])
+    return date_str
+
+def alert_card(date_idx, row):
+    date_str = date_idx.strftime("%Y-%m-%d")
+    days_ago = (datetime.now() - date_idx.to_pydatetime().replace(tzinfo=None)).days
+    
+    is_severe = row['Anomaly_Score'] > row['Threshold'] * 1.3
+    sev_label = html.Span([html.Span(t('status_crisis', 'en'), className='lang-en'), html.Span(t('status_crisis', 'ar'), className='lang-ar')]) if is_severe else html.Span([html.Span(t('status_stress', 'en'), className='lang-en'), html.Span(t('status_stress', 'ar'), className='lang-ar')])
+    sev = DANGER if is_severe else WARN
+
+    contribs = {s: row.get(f'{s}_Contribution', np.nan) for s in SIGNALS}
+    top_asset = max(contribs, key=lambda s: contribs[s] if pd.notna(contribs[s]) else -1)
+    top_pct = contribs[top_asset]
+    
+    driver_txt = html.Span([
+        html.Span(f"{get_asset(top_asset, 'en')} {top_pct:.0f}%", className='lang-en'),
+        html.Span(f"{get_asset(top_asset, 'ar')} {top_pct:.0f}%", className='lang-ar')
+    ]) if pd.notna(top_pct) else "—"
+
+    stats = [
+        stat_chip('top_driver', driver_txt, driver=True),
+        stat_chip("S&P 500", f"{row['S&P500']:,.0f}"),
+        stat_chip("VIX", f"{row['VIX']:.1f}"),
+        stat_chip('chart_limit', f"{row['Threshold']:.2f}"),
+    ]
+    pval = row.get('Anomaly_PValue', np.nan)
+    if pd.notna(pval):
+        stats.append(stat_chip('rarity', f"{pval*100:.2f}%"))
+        
+    days_ago_comp = html.Span([
+        html.Span(f"{days_ago} {t('days_ago_suffix', 'en')}", className='lang-en'),
+        html.Span(f"قبل {days_ago} يوم", className='lang-ar')
+    ])
+    stats.append(stat_chip('when', days_ago_comp))
+
+    en_date = date_idx.strftime("%B %d, %Y")
+    ar_date = f"{date_idx.day} {t(MONTH_NAMES[date_idx.month-1].lower(), 'ar')} {date_idx.year}"
+    date_comp = html.Span([html.Span(en_date, className='lang-en'), html.Span(ar_date, className='lang-ar')])
+
+    details_children = [html.Summary(html.Span(["📰 ", trans('view_news'), " ", date_comp]), className='news-summary')]
+    if date_str in HISTORICAL_EVENTS:
+        details_children.append(html.Div(className='event-note', children=[
+            html.Span("📌", className='pin'), get_event(date_str)]))
+    details_children.append(
+        html.Button(trans('load_headlines'), id={'type': 'news-btn', 'index': date_str},
+                    n_clicks=0, className='news-load-btn'))
+    details_children.append(
+        dcc.Loading(type='circle', color=ACCENT,
+                    children=html.Div(id={'type': 'news-out', 'index': date_str})))
+
+    return html.Div(className='alert glass-card', **{'data-aos': 'fade-up'}, children=[
+        html.Div(className='alert-rail', style={'background': sev}),
+        html.Div(className='alert-body', children=[
+            html.Div(className='alert-row1', children=[
+                html.Div(className='alert-left', children=[
+                    html.Span(date_comp, className='alert-date'),
+                    html.Span(sev_label, className='sev-pill',
+                              style={'color': sev, 'background': tint(sev, 0.15), 'border': f'1px solid {tint(sev, 0.25)}'}),
+                ]),
+                html.Span(f"{row['Anomaly_Score']:.2f}", className='alert-score', style={'color': sev}),
+            ]),
+            html.Div(stats, className='alert-stats'),
+            html.Details(details_children, className='news-details'),
+        ]),
+    ])
+
+def build_cards(year, month):
+    if not DATA_OK: return []
+    flags = DF[DF['Flagged'] == True].sort_index(ascending=False)
+    if year and year != "All Years":
+        flags = flags[flags.index.year == int(year)]
+    if month and month != "All Months":
+        m_idx = MONTH_NAMES.index(month) + 1 if month in MONTH_NAMES else 1
+        flags = flags[flags.index.month == m_idx]
+
+    note = None
+    if len(flags) > 60:
+        flags = flags.head(60)
+        note = html.Div(trans('showing_recent'), className='context-box')
+    if len(flags) == 0:
+        return [html.Div(trans('no_anomaly'), className='context-box')]
+
+    children = []
+    if note: children.append(note)
+    children += [alert_card(idx, row) for idx, row in flags.iterrows()]
+    return children
+
+def validation_section():
+    s = SUMMARY
+    cards = html.Div(className='fintech-grid kpi-row', children=[
+        kpi_card('crisis_recall', f"{s['recall']:.0f}%", html.Span(f"{s['detected']} / {s['total_ev']}"), large=True, value_color=POS if s['recall'] >= 70 else WARN),
+        kpi_card('events_detected', f"{s['detected']}", 'within_7d'),
+        kpi_card('flagged_days', f"{s['total_flags']:,}", 'all_history'),
+        kpi_card('daily_flag_rate', f"{s['flag_rate']:.1f}%", 'of_trading_days'),
+    ])
+
+    header_cells = [html.Th(trans('date')), html.Th(trans('hist_event')), html.Th(trans('composite')), html.Th(trans('nearest')), html.Th(trans('peak_score'))]
+    
+    body = []
+    for r in VAL:
+        hit = html.Span(trans('detected'), className='badge solid success') if r['detected'] else html.Span(trans('missed'), className='badge solid error')
+        nearest = html.Span([html.Span(f"{r['nearest']}d", className='lang-en'), html.Span(f"{r['nearest']} يوم", className='lang-ar')]) if r['nearest'] is not None else "—"
+        peak = f"{r['peak']:.2f}" if r['peak'] is not None else "—"
+        
+        evt_key = HISTORICAL_EVENTS.get(r['date'], r['event'])
+        event_trans = trans(evt_key) if evt_key in TR['en'] else r['event']
+        
+        cells = [html.Td(r['date'], className='mono'), html.Td(event_trans), html.Td(hit), html.Td(nearest, className='mono'), html.Td(peak, className='mono')]
+        body.append(html.Tr(cells))
+
+    table = html.Table(className='fintech-table', children=[html.Thead(html.Tr(header_cells)), html.Tbody(body)])
+
+    return html.Div([
+        html.H2(trans('model_val'), className='section-title'),
+        cards,
+        html.Div(className='glass-card table-wrap', children=table)
+    ])
+
+def raw_table():
+    raw = DF_IF.tail(100).copy()
+    raw.insert(0, 'Date', raw.index.strftime('%Y-%m-%d'))
+    for c in raw.columns:
+        if raw[c].dtype.kind in 'fc':
+            raw[c] = raw[c].round(3)
+    cols = [{'name': c, 'id': c} for c in raw.columns]
+    return dash_table.DataTable(
+        data=raw.to_dict('records'), columns=cols, page_size=15,
+        style_table={'overflowX': 'auto', 'borderRadius': '12px'},
+        style_header={'backgroundColor': 'transparent', 'color': '#A1A1AA', 'fontWeight': '500',
+                      'borderBottom': '1px solid rgba(255,255,255,0.1)', 'fontFamily': 'inherit',
+                      'fontSize': '12px', 'textAlign': 'left', 'padding': '12px'},
+        style_cell={'backgroundColor': 'transparent', 'color': '#E4E4E7',
+                    'borderBottom': '1px solid rgba(255,255,255,0.05)', 'fontFamily': 'JetBrains Mono, monospace',
+                    'fontSize': '12px', 'padding': '12px', 'textAlign': 'left'},
+        style_data_conditional=[{'if': {'filter_query': '{Flagged} eq 1'}, 'backgroundColor': 'rgba(255,75,75,0.05)'}]
+    )
+
 def _method_block(icon_name, title_key, p_keys):
     return html.Div(className='glass-card method-block', **{'data-aos': 'fade-up'}, children=[
         html.Div(className='method-head', children=[
@@ -531,8 +695,11 @@ def icon(name, width=18, color=None):
         return DashIconify(**kw)
     return html.Span('', className='ico-fallback', style={'width': f'{width}px', 'height': f'{width}px', 'display': 'inline-block'})
 
-NAV_ICONS = {'overview': 'lucide:layout-dashboard', 'timeline': 'lucide:trending-up', 'methodology': 'lucide:book-open'}
-VIEWS = ["overview", "timeline", "methodology"]
+NAV_ICONS = {
+    'overview': 'lucide:layout-dashboard', 'timeline': 'lucide:trending-up', 'alerts': 'lucide:bell-ring',
+    'validation': 'lucide:shield-check', 'methodology': 'lucide:book-open', 'raw': 'lucide:table-2',
+}
+VIEWS = ["overview", "timeline", "alerts", "validation", "methodology", "raw"]
 
 def sidebar():
     nav = [html.Div(id={'type': 'nav', 'index': key},
@@ -637,7 +804,6 @@ def build_view(view_key):
             html.Div(className='glass-card p-4', **{'data-aos': 'fade-up'}, children=[
                 html.Div(className='control-wrapper', children=[
                     dcc.Dropdown(id='range-dd', className='fintech-dd', clearable=False,
-                        # Pass HTML elements into label for instant CSS switching
                         options=[{'label': html.Span([html.Span("Last 6 Months", className='lang-en'), html.Span("آخر 6 أشهر", className='lang-ar')]), 'value': "Last 6 Months"}, 
                                  {'label': html.Span([html.Span("Last 2 Years", className='lang-en'), html.Span("آخر سنتين", className='lang-ar')]), 'value': "Last 2 Years"}, 
                                  {'label': html.Span([html.Span("Full History (2005-Present)", className='lang-en'), html.Span("التاريخ الكامل (2005-الآن)", className='lang-ar')]), 'value': "Full History (2005-Present)"}],
@@ -647,8 +813,32 @@ def build_view(view_key):
             ])
         ])
 
+    elif view_key == "alerts":
+        year_opts = [{'label': html.Span([html.Span(t('all_years', 'en'), className='lang-en'), html.Span(t('all_years', 'ar'), className='lang-ar')]), 'value': 'All Years'}] + [{'label': str(y), 'value': str(y)} for y in AVAIL_YEARS]
+        month_opts = [{'label': html.Span([html.Span(t('all_months', 'en'), className='lang-en'), html.Span(t('all_months', 'ar'), className='lang-ar')]), 'value': 'All Months'}]
+        for m in MONTH_NAMES: month_opts.append({'label': trans(m.lower()), 'value': m})
+        
+        return html.Div(className='view-fade-in', children=[
+            html.H2(trans('anomaly_alerts'), className='section-title'),
+            html.Div(className='fintech-grid mb-4', **{'data-aos': 'fade-up'},
+                     style={'gridTemplateColumns': '1fr 1fr', 'zIndex': '2'}, children=[
+                dcc.Dropdown(id='year-dd', className='fintech-dd', options=year_opts, value='All Years', clearable=False),
+                dcc.Dropdown(id='month-dd', className='fintech-dd', options=month_opts, value='All Months', clearable=False),
+            ]),
+            dcc.Loading(type='circle', color=ACCENT, children=html.Div(id='cards-container')),
+        ])
+
+    elif view_key == "validation":
+        return html.Div(className='view-fade-in', children=[validation_section()])
+
     elif view_key == "methodology":
         return methodology_view()
+
+    elif view_key == "raw":
+        return html.Div(className='view-fade-in', children=[
+            html.H2(trans('raw_data_exp'), className='section-title'),
+            html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=raw_table())
+        ])
 
     return html.Div("View not found.")
 
@@ -687,6 +877,32 @@ def update_chart(view, current_class):
     if not DATA_OK: return no_update
     lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
     return build_figure(view or "Last 6 Months", ACCENT, lang)
+
+@callback(Output('month-dd', 'options'), Output('month-dd', 'value'), Input('year-dd', 'value'))
+def update_months(year):
+    opts = [{'label': trans('all_months'), 'value': 'All Months'}]
+    if DATA_OK and year and year != "All Years":
+        flags = DF[DF['Flagged'] == True]
+        months = sorted(flags[flags.index.year == int(year)].index.month.unique())
+        opts += [{'label': trans(MONTH_NAMES[m - 1].lower()), 'value': MONTH_NAMES[m - 1]} for m in months]
+    return opts, 'All Months'
+
+@callback(Output('cards-container', 'children'), Input('year-dd', 'value'), Input('month-dd', 'value'))
+def update_cards(year, month):
+    return build_cards(year, month)
+
+@callback(Output({'type': 'news-out', 'index': MATCH}, 'children'),
+          Input({'type': 'news-btn', 'index': MATCH}, 'n_clicks'),
+          State({'type': 'news-btn', 'index': MATCH}, 'id'), prevent_initial_call=True)
+def load_news(n_clicks, btn_id):
+    if not n_clicks: return no_update
+    news = get_news_for_date(btn_id['index'])
+    if not news: return html.Div("No headlines found.", className='news-empty')
+    return [html.Div(className='news-item', children=[
+        html.Div(title, className='news-title'),
+        html.Div(pub, className='news-date'),
+        html.A("Read Source ↗", href=link, target="_blank", className='news-link'),
+    ]) for (title, link, pub) in news]
 
 # Instant UI Language Switch & Plotly Chart Restyling
 app.clientside_callback(
@@ -733,7 +949,6 @@ app.clientside_callback(
             const font = is_ar ? 'ThmanyahSans, sans-serif' : 'Inter, sans-serif';
             fig.layout.font.family = font;
             fig.y = fig.y.map(asset => {
-                // Find translation key by matching current asset string
                 for(let k in tr_data['en']['assets']) {
                     if(asset === tr_data['en']['assets'][k] || asset === tr_data['ar']['assets'][k]) {
                         return tr_data[new_lang]['assets'][k];
