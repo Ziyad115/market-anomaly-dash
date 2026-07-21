@@ -197,7 +197,6 @@ def tint(hex_color, alpha):
 # ─────────────────────────────────────────────────────────────────────────────
 #  GLOBAL STATE INITIALIZATION
 # ─────────────────────────────────────────────────────────────────────────────
-# IMPORTANT: All globals accessed across multiple worker processes must be mapped here.
 DF = None
 DF_IF = None
 VAL = None
@@ -210,7 +209,6 @@ TRADING_DAYS = 0
 LOADED_AT = "—"
 DATA_SOURCE = "unknown"
 
-# The global dictionary needed by fear_greed_kpi()
 FG_CACHE = {'timestamp': None, 'data': None}
 
 TEMP_DIR = tempfile.gettempdir()
@@ -224,7 +222,6 @@ _LOCAL_CACHE_TS = 0
 #  DATA LOGIC & ASYNC FETCHING
 # ─────────────────────────────────────────────────────────────────────────────
 def fetch_single_ticker(name, t_sym):
-    """Sequential fetch using yfinance with exponential backoff & jitter to respect rate limits."""
     close = None
     for attempt in range(4):
         try:
@@ -244,7 +241,6 @@ def fetch_single_ticker(name, t_sym):
     return name, close if close is not None else pd.Series(dtype=float), "yfinance"
 
 def fetch_fg():
-    """Background fetcher for CNN Fear & Greed."""
     global FG_CACHE
     if HAS_FG:
         try:
@@ -255,7 +251,6 @@ def fetch_fg():
             print(f"[FG FETCH ERROR] {e}")
 
 def load_data():
-    """Robust data loading with FRED fallbacks and local caching."""
     global DATA_SOURCE  
     tickers = {'S&P500': '^GSPC', 'VIX': '^VIX', 'Gold': 'GC=F', 'Oil_WTI': 'CL=F', 'USD_Index': 'DX-Y.NYB'}
     fred_map = {'VIX': 'VIXCLS', 'Oil_WTI': 'DCOILWTICO'}
@@ -273,25 +268,20 @@ def load_data():
     log_msgs = []
     now = datetime.now()
 
-    # Fire off F&G independently so network lag doesn't block the layout
     threading.Thread(target=fetch_fg, daemon=True).start()
 
-    # SEQUENTIAL fetch to strictly avoid Yahoo rate limits
     for name, sym in tickers.items():
         series = pd.Series(dtype=float)
         src_name = "none"
 
-        # 1. Check fresh cache (24h TTL)
         cached_item = cache.get(name)
         if cached_item and (now - cached_item['timestamp']) < timedelta(hours=24):
             series = cached_item['data']
             src_name = "cache (fresh)"
         
-        # 2. Try yfinance with backoff + jitter
         if series.empty:
             _, series, src_name = fetch_single_ticker(name, sym)
 
-        # 3. Try FRED fallback
         if series.empty and name in fred_map:
             try:
                 fred_id = fred_map[name]
@@ -307,14 +297,12 @@ def load_data():
             except Exception:
                 pass
 
-        # 4. Fallback to expired cache
         if series.empty and cached_item:
             series = cached_item['data']
             src_name = "cache (stale)"
 
         if not series.empty:
             data[name] = series
-            # Prevent updating timestamp if it came from cache
             cache_ts = now if "cache" not in src_name else cached_item['timestamp']
             cache[name] = {'data': series, 'timestamp': cache_ts}
             sources_used[name] = src_name
@@ -323,7 +311,6 @@ def load_data():
             data[name] = pd.Series(dtype=float)
             log_msgs.append(f"{name}: FAILED")
 
-    # Save cache
     try:
         with open(RAW_CACHE_FILE, 'wb') as f:
             pickle.dump(cache, f)
@@ -334,7 +321,6 @@ def load_data():
     unique_sources = set(sources_used.values())
     DATA_SOURCE = ", ".join(unique_sources) if unique_sources else "unknown"
 
-    # Only compile valid series into the DataFrame to prevent dropna() crashes
     valid_data = {k: v for k, v in data.items() if not v.empty}
     if not valid_data: 
         return pd.DataFrame()
@@ -345,8 +331,6 @@ def load_data():
 
 def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
     df = prices.copy()
-    
-    # Gracefully handle missing signals to avoid column exceptions
     active_price_assets = [c for c in ['S&P500', 'Gold', 'Oil_WTI', 'USD_Index'] if c in df.columns]
     active_signals = [c for c in SIGNALS if c in df.columns]
 
@@ -378,7 +362,6 @@ def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
     for s in active_signals:
         df[f'{s}_Contribution'] = (df[f'{s}_Zscore'] ** 2 / safe) * 100
         
-    # Inject NaNs for fully missing signals so layout still builds safely
     for s in SIGNALS:
         if s not in active_signals:
             df[f'{s}_Contribution'] = np.nan
@@ -954,14 +937,11 @@ def sidebar():
                 html.Div(className='logo-left', children=[
                     html.Img(src=app.get_asset_url('Anomaly_logo_wordmark.png'), className='logo-wordmark', alt='Anomaly'),
                 ]),
-                html.Button(icon('lucide:panel-left', 18, ACCENT2), id='collapse-btn', n_clicks=0, className='collapse-btn'),
+                html.Button(icon('lucide:panel-left', 18, ACCENT2), id='collapse-btn', n_clicks=0, className='collapse-btn', title=t('toggle_sidebar', 'en')),
             ])
         ]),
         html.Div(className='nav-container', children=[
             html.Div(nav, className='nav-menu'),
-            html.Div(className='nav-extra', children=[
-                html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
-            ]),
         ])
     ])
 
@@ -1042,6 +1022,9 @@ def serve_layout():
             sidebar(),
             html.Div(className='main-content', children=[
                 html.Div(className='top-nav', children=[
+                    html.Div(className='nav-extra', children=[
+                        html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
+                    ]),
                     html.Div(className='status-indicator', children=[
                         html.Span(className='status-dot', style={'background': POS, 'boxShadow': f'0 0 10px {POS}'}),
                         html.Span(trans('live_data'), className='status-src')
@@ -1075,7 +1058,7 @@ def build_view(view_key, lang='en'):
 
         row_1 = html.Div(className='glass-card', style={'marginBottom': '24px'}, **{'data-aos': 'fade-up'}, children=[
             html.Div(trans('sys_stress'), className='card-title'),
-            html.Div(dir='ltr', children=[dcc.Graph(id='overview-chart', figure=fig_overview, config={'displayModeBar': False})])
+            html.Div(dir='ltr', children=[dcc.Graph(id='overview-chart', figure=fig_overview, config={'displayModeBar': False, 'responsive': True})])
         ])
 
         try:
@@ -1087,7 +1070,7 @@ def build_view(view_key, lang='en'):
         row_2 = html.Div(className='fintech-grid layout-row-2', children=[
             html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('drivers_today'), className='card-title'),
-                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=fig_contrib, config={'displayModeBar': False})])
+                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=fig_contrib, config={'displayModeBar': False, 'responsive': True})])
             ]),
             html.Div(className='glass-card flex-col', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('market_narrative'), className='card-title'),
@@ -1140,7 +1123,7 @@ def build_view(view_key, lang='en'):
                                  {'label': html.Span([html.Span("Full History (2005-Present)", className='lang-en'), html.Span("التاريخ الكامل (2005-الآن)", className='lang-ar')]), 'value': "Full History (2005-Present)"}],
                         value="Last 2 Years"),
                 ]),
-                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT, 'en'), config={'displayModeBar': False})]),
+                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT, 'en'), config={'displayModeBar': False, 'responsive': True})]),
             ])
         ])
 
@@ -1249,7 +1232,7 @@ def load_news(n_clicks, btn_id):
         html.A("Read Source ↗", href=link, target="_blank", className='news-link'),
     ]) for (title, link, pub) in news]
 
-# Decoupled Language Switcher. Instant updates using Plotly.relayout/restyle
+# Instant UI Language Switch & Plotly Chart Restyling (Decoupled from Outputs to prevent failing on hidden charts)
 app.clientside_callback(
     """
     function(n_clicks, tr_data, current_class) {
