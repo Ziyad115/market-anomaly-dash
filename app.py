@@ -3,10 +3,10 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import json
 import threading
-import concurrent.futures
 import traceback
 import pickle
 import tempfile
+import random
 from datetime import datetime, timedelta
 from functools import lru_cache
 
@@ -131,7 +131,7 @@ TR = {
         'score_label': 'مؤشر شذوذ السوق', 'lang_btn': 'EN', 'toggle_sidebar': 'طي/توسيع القائمة',
         
         'january': 'يناير', 'february': 'فبراير', 'march': 'مارس', 'april': 'أبريل', 'may': 'مايو', 'june': 'يونيو',
-        'july': 'يوليو', 'august': 'أغسطس', 'september': 'سبتمبر', 'october': 'أكتوبر', 'november': 'نوفمبر', 'ديسمبر': 'ديسمبر',
+        'july': 'يوليو', 'august': 'أغسطس', 'september': 'سبتمبر', 'october': 'أكتوبر', 'november': 'نوفمبر', 'december': 'ديسمبر',
         
         'assets': {'S&P500': 'إس آند بي 500', 'Gold': 'الذهب', 'Oil_WTI': 'النفط', 'USD_Index': 'مؤشر الدولار', 'VIX': 'مؤشر التقلب (VIX)'},
         'ranges': {'Last 6 Months': 'آخر 6 أشهر', 'Last 2 Years': 'آخر سنتين', 'Full History (2005-Present)': 'التاريخ الكامل (2005-الآن)'},
@@ -152,9 +152,11 @@ TR = {
 }
 
 def t(key, lang='en'):
+    """Safe translation dictionary lookup."""
     return TR.get(lang, TR['en']).get(key, key)
 
 def trans(key):
+    """Returns a dual-language span component that switches instantly via CSS class."""
     return html.Span([
         html.Span(t(key, 'en'), className='lang-en'),
         html.Span(t(key, 'ar'), className='lang-ar')
@@ -191,33 +193,6 @@ def tint(hex_color, alpha):
 # ─────────────────────────────────────────────────────────────────────────────
 #  DATA LOGIC & ASYNC FETCHING
 # ─────────────────────────────────────────────────────────────────────────────
-def fetch_single_ticker(name, t_sym):
-    try:
-        from defeatbeta_api.data.ticker import Ticker as DBTicker
-        dbt = DBTicker(t_sym)
-        price_df = dbt.price()
-        price_df['report_date'] = pd.to_datetime(price_df['report_date'])
-        price_df = price_df.set_index('report_date').sort_index()
-        price_df = price_df[price_df.index >= '2005-01-01']
-        if len(price_df) > 0:
-            return name, price_df['close'], "defeatbeta-api"
-    except Exception:
-        pass
-
-    close = None
-    for attempt in range(4):
-        try:
-            d = yf.download(t_sym, start='2005-01-01', progress=False)
-            c = d['Close']
-            if isinstance(c, pd.DataFrame): c = c.iloc[:, 0]
-            if len(c) > 0:
-                close = c
-                break
-        except Exception:
-            pass
-        time.sleep(0.5 * (2 ** attempt)) 
-        
-    return name, close if close is not None else pd.Series(dtype=float), "yfinance"
 
 def fetch_fg():
     if HAS_FG:
@@ -230,19 +205,100 @@ def fetch_fg():
 def load_data():
     global DATA_SOURCE  
     tickers = {'S&P500': '^GSPC', 'VIX': '^VIX', 'Gold': 'GC=F', 'Oil_WTI': 'CL=F', 'USD_Index': 'DX-Y.NYB'}
+    fred_map = {'VIX': 'VIXCLS', 'Oil_WTI': 'DCOILWTICO'}
+    
+    cache = {}
+    if os.path.exists(RAW_CACHE_FILE):
+        try:
+            with open(RAW_CACHE_FILE, 'rb') as f:
+                cache = pickle.load(f)
+        except Exception:
+            cache = {}
+
     data = {}
-    sources = []
+    sources_used = {}
+    log_msgs = []
+    now = datetime.now()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
-        executor.submit(fetch_fg)
-        futures = {executor.submit(fetch_single_ticker, name, sym): name for name, sym in tickers.items()}
-        for future in concurrent.futures.as_completed(futures):
-            name, series, src = future.result()
+    # Fire off F&G independently in background
+    threading.Thread(target=fetch_fg, daemon=True).start()
+
+    for name, t_sym in tickers.items():
+        series = None
+        src_name = "none"
+        
+        # 1. Check fresh cache (24h TTL)
+        cached_item = cache.get(name)
+        if cached_item and (now - cached_item['timestamp']) < timedelta(hours=24):
+            series = cached_item['data']
+            src_name = "cache (fresh)"
+        
+        # 2. Try yfinance sequentially with backoff + jitter
+        if series is None:
+            for attempt in range(4):
+                try:
+                    d = yf.download(t_sym, start='2005-01-01', progress=False)
+                    c = d['Close']
+                    if isinstance(c, pd.DataFrame): c = c.iloc[:, 0]
+                    if len(c) > 0:
+                        c.index = pd.to_datetime(c.index)
+                        if c.index.tz is not None:
+                            c.index = c.index.tz_localize(None)
+                        series = c
+                        src_name = "yfinance"
+                        break
+                except Exception:
+                    pass
+                time.sleep((0.5 * (2 ** attempt)) + random.uniform(0, 0.5))
+
+        # 3. Try FRED fallback
+        if series is None and name in fred_map:
+            try:
+                fred_id = fred_map[name]
+                url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={fred_id}"
+                df_fred = pd.read_csv(url, na_values='.', parse_dates=['DATE'], index_col='DATE')
+                df_fred.index = pd.to_datetime(df_fred.index)
+                if df_fred.index.tz is not None:
+                    df_fred.index = df_fred.index.tz_localize(None)
+                df_fred = df_fred.dropna()
+                df_fred = df_fred[df_fred.index >= '2005-01-01']
+                if len(df_fred) > 0:
+                    series = df_fred[fred_id]
+                    src_name = f"fred:{fred_id}"
+            except Exception:
+                pass
+
+        # 4. Fallback to expired cache
+        if series is None and cached_item:
+            series = cached_item['data']
+            src_name = "cache (stale)"
+
+        if series is not None:
             data[name] = series
-            sources.append(src)
+            cache[name] = {'data': series, 'timestamp': now if "cache" not in src_name else cached_item['timestamp']}
+            sources_used[name] = src_name
+            log_msgs.append(f"{name}: {src_name} (rows={len(series)})")
+        else:
+            log_msgs.append(f"{name}: FAILED TO LOAD")
 
-    DATA_SOURCE = "defeatbeta-api" if "defeatbeta-api" in sources else "yfinance"
-    return pd.DataFrame(data).dropna()
+    # Save cache
+    try:
+        with open(RAW_CACHE_FILE, 'wb') as f:
+            pickle.dump(cache, f)
+    except Exception:
+        pass
+
+    print("[DATA LOAD] " + " | ".join(log_msgs))
+    
+    unique_sources = set(sources_used.values())
+    DATA_SOURCE = ", ".join(unique_sources) if unique_sources else "unknown"
+
+    if not data:
+        return pd.DataFrame()
+        
+    df = pd.DataFrame(data)
+    df = df.ffill().dropna()
+    return df
 
 def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
     df = prices.copy()
@@ -332,6 +388,7 @@ LOADED_AT = "—"
 TEMP_DIR = tempfile.gettempdir()
 LOCK_FILE = os.path.join(TEMP_DIR, "anomaly_dash_init.lock")
 STATE_FILE = os.path.join(TEMP_DIR, "anomaly_dash_state.pkl")
+RAW_CACHE_FILE = os.path.join(TEMP_DIR, "anomaly_raw_prices.pkl")
 _LOCAL_CACHE_TS = 0
 FG_CACHE = {'timestamp': None, 'data': None}
 
@@ -361,6 +418,8 @@ def sync_state():
 def init_data():
     global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT
     prices = load_data()
+    if prices.empty:
+        raise ValueError("Data fetch returned empty DataFrame.")
     DF = compute_anomaly(prices)
     VAL = validate_events(DF, HISTORICAL_EVENTS, 'Flagged')
     detected = sum(r['detected'] for r in VAL)
@@ -462,7 +521,6 @@ def build_figure(view, current_color, lang='en'):
     elif view == "Last 2 Years" or view == t('ranges', lang).get("Last 2 Years"):
         plot_df = DF.tail(504).resample("W").last()
     else:
-        # Aggressive downsample for 20+ years history to prevent giant payload
         plot_df = DF.resample("ME").last()
 
     y_top = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) * 1.15
@@ -474,7 +532,7 @@ def build_figure(view, current_color, lang='en'):
     
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines', name=t('chart_score', lang),
                              line=dict(color=current_color, width=2, shape='spline', smoothing=0.35),
-                             fill='tozeroy', fillcolor=tint(current_color, 0.08),
+                             fill='tozeroy', fillcolor='rgba(255,255,255,0.08)',
                              hovertemplate='Score: <b>%{y:.2f}</b><extra></extra>'))
     
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Threshold'], mode='lines', name=t('chart_limit', lang),
@@ -552,7 +610,6 @@ def kpi_card(label_key, value_component, sub_key, large=False, icon_name=None, v
 def fear_greed_kpi():
     fg_val_str = "N/A"
     fg_color = MUTE
-    desc_comp = trans('unavailable')
     
     if HAS_FG:
         if FG_CACHE.get('data'):
@@ -858,7 +915,6 @@ app.index_string = '''<!DOCTYPE html>
 def serve_layout():
     sync_state()
     
-    # If loading in background, serve instantly-rendered skeleton loader
     if not DATA_OK and os.path.exists(LOCK_FILE):
         return html.Div(
             style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'justifyContent': 'center', 'height': '100vh', 'backgroundColor': '#0A0A0A', 'fontFamily': 'Inter, sans-serif'},
