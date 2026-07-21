@@ -80,7 +80,7 @@ svg { display: block; }
 .brand-word { max-width: 100px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; font-size: 15px; }
 .nav-label { max-width: 120px; display: inline-block; }
 
-/* Accented Language Toggle Button (Moved up into Nav area) */
+/* Accented Language Toggle Button */
 .lang-toggle-btn { 
     background: rgba(0, 229, 153, 0.08); 
     border: 1px solid rgba(0, 229, 153, 0.25); 
@@ -130,7 +130,7 @@ svg { display: block; }
 .nav-item.active { background: rgba(92, 107, 255, 0.12); color: var(--accent); font-weight: 600; }
 .nav-ico-wrap { display: flex; align-items: center; color: currentColor; flex-shrink: 0; }
 
-/* Top Nav */
+/* Top Nav (Removed extra title, pinned pill to right) */
 .top-nav { display: flex; justify-content: flex-end; align-items: center; margin-bottom: 28px; }
 .status-indicator { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; color: var(--success); padding: 5px 10px; border-radius: 99px; background: rgba(0, 229, 153, 0.08); border: 1px solid rgba(0, 229, 153, 0.2); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 8px var(--success); }
@@ -156,7 +156,7 @@ svg { display: block; }
 .delta { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 500; }
 .hero-timestamp { font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono); }
 
-/* Grid Layouts */
+/* Grid Layouts (Tightened) */
 .fintech-grid { display: grid; gap: 16px; margin-bottom: 16px; position: relative; z-index: 1; }
 .layout-row-2 { grid-template-columns: 1fr 1fr; }
 .kpi-row { grid-template-columns: 1.5fr 1fr 1fr 1fr; }
@@ -179,10 +179,27 @@ svg { display: block; }
 .kpi-card.large .kpi-value { font-size: 28px; }
 .kpi-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 6px; }
 
-/* ── DASH DROPDOWNS ── */
-.dash-dropdown { background: transparent !important; border: none !important; min-height: 40px; }
-.fintech-dd .Select-control { background: var(--glass-bg) !important; border: 1px solid var(--glass-border) !important; border-radius: 8px !important; min-height: 40px; color: var(--text-primary) !important; box-shadow: none !important; }
-.fintech-dd .Select-menu-outer { background: var(--bg-surface) !important; border: 1px solid var(--glass-border) !important; border-radius: 8px !important; margin-top: 6px; z-index: 9999 !important; }
+/* ── DASH DROPDOWNS (FIXED OVERLAPPING SEARCH INPUT) ── */
+.dash-dropdown { 
+    background: transparent !important; 
+    border: none !important; 
+    min-height: 40px; 
+}
+.fintech-dd .Select-control { 
+    background: var(--glass-bg) !important; 
+    border: 1px solid var(--glass-border) !important; 
+    border-radius: 8px !important; 
+    min-height: 40px; 
+    color: var(--text-primary) !important; 
+    box-shadow: none !important; 
+}
+.fintech-dd .Select-menu-outer { 
+    background: var(--bg-surface) !important; 
+    border: 1px solid var(--glass-border) !important; 
+    border-radius: 8px !important; 
+    margin-top: 6px; 
+    z-index: 9999 !important; /* Critical for dropdown overlap */
+}
 .dash-dropdown-wrapper, .dash-dropdown-content, .dash-dropdown-trigger { background: transparent !important; border: none !important; color: var(--text-primary) !important; width: 100%; }
 .dash-dropdown-value, .dash-dropdown-value-item, .dash-dropdown-value-count { color: var(--text-primary) !important; }
 .dash-dropdown-search, .dash-dropdown-search input { color: var(--text-primary) !important; background: transparent !important; border: none !important; }
@@ -262,7 +279,5 @@ svg { display: block; }
     .main-content { padding: 20px 16px; }
     .hero-score { font-size: 48px; }
     .kpi-row { grid-template-columns: 1fr; }
-    .status-grid { grid-template-columns: 1fr 1fr; }
-    .method-lead { font-size: 15px; }
     .nav-extra { padding: 0 4px; margin: 0; align-items: center; }
 }
