@@ -129,7 +129,6 @@ svg { display: block; }
 .nav-item:hover { background: var(--glass-hover); color: var(--text-primary); }
 .nav-item.active { background: rgba(92, 107, 255, 0.12); color: var(--accent); font-weight: 600; }
 .nav-ico-wrap { display: flex; align-items: center; color: currentColor; flex-shrink: 0; }
-.sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 12px; align-items: center; }
 
 /* Top Nav (Removed extra title, pinned pill to right) */
 .top-nav { display: flex; justify-content: flex-end; align-items: center; margin-bottom: 28px; }
@@ -157,7 +156,7 @@ svg { display: block; }
 .delta { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 500; }
 .hero-timestamp { font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono); }
 
-/* Grid Layouts (Tightened) */
+/* Grid Layouts */
 .fintech-grid { display: grid; gap: 16px; margin-bottom: 16px; position: relative; z-index: 1; }
 .layout-row-2 { grid-template-columns: 1fr 1fr; }
 .kpi-row { grid-template-columns: 1.5fr 1fr 1fr 1fr; }
@@ -165,7 +164,6 @@ svg { display: block; }
 .center-content { justify-content: center; align-items: center; text-align: center; }
 
 /* Specific Elements */
-.status-display { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; }
 .narrative-text { font-size: 14.5px; line-height: 1.6; color: var(--text-secondary); margin-top: -4px; }
 .mt-2 { margin-top: 8px; }
 .control-wrapper { margin-bottom: 12px; max-width: 320px; }
@@ -181,27 +179,10 @@ svg { display: block; }
 .kpi-card.large .kpi-value { font-size: 28px; }
 .kpi-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 6px; }
 
-/* ── DASH DROPDOWNS (FIXED OVERLAPPING SEARCH INPUT) ── */
-.dash-dropdown { 
-    background: transparent !important; 
-    border: none !important; 
-    min-height: 40px; 
-}
-.fintech-dd .Select-control { 
-    background: var(--glass-bg) !important; 
-    border: 1px solid var(--glass-border) !important; 
-    border-radius: 8px !important; 
-    min-height: 40px; 
-    color: var(--text-primary) !important; 
-    box-shadow: none !important; 
-}
-.fintech-dd .Select-menu-outer { 
-    background: var(--bg-surface) !important; 
-    border: 1px solid var(--glass-border) !important; 
-    border-radius: 8px !important; 
-    margin-top: 6px; 
-    z-index: 9999 !important; /* Critical for dropdown overlap */
-}
+/* ── DASH DROPDOWNS ── */
+.dash-dropdown { background: transparent !important; border: none !important; min-height: 40px; }
+.fintech-dd .Select-control { background: var(--glass-bg) !important; border: 1px solid var(--glass-border) !important; border-radius: 8px !important; min-height: 40px; color: var(--text-primary) !important; box-shadow: none !important; }
+.fintech-dd .Select-menu-outer { background: var(--bg-surface) !important; border: 1px solid var(--glass-border) !important; border-radius: 8px !important; margin-top: 6px; z-index: 9999 !important; }
 .dash-dropdown-wrapper, .dash-dropdown-content, .dash-dropdown-trigger { background: transparent !important; border: none !important; color: var(--text-primary) !important; width: 100%; }
 .dash-dropdown-value, .dash-dropdown-value-item, .dash-dropdown-value-count { color: var(--text-primary) !important; }
 .dash-dropdown-search, .dash-dropdown-search input { color: var(--text-primary) !important; background: transparent !important; border: none !important; }
@@ -251,24 +232,16 @@ svg { display: block; }
 .view { width: 100%; }
 .ico-fallback { background: currentColor; opacity: 0.25; border-radius: 3px; }
 
-/* ── DATA STATUS PANEL (methodology) ──────────────────────── */
-.status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 20px; }
-.status-cell { display: flex; flex-direction: column; gap: 6px; }
-.status-key { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); font-weight: 500; }
-.status-val { font-size: 16px; font-weight: 600; font-family: var(--font-mono); letter-spacing: -0.01em; }
-
-/* ── METHODOLOGY VIEW ─────────────────────────────────────── */
-.method-lead { font-size: 17px; line-height: 1.6; color: var(--text-secondary); max-width: 760px; margin: 0 0 24px 0; }
+/* Methodology Block */
+.method-lead { font-size: 16px; line-height: 1.6; color: var(--text-secondary); max-width: 800px; margin: 0 0 24px 0; }
 .method-block { margin-bottom: 20px; }
 .method-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 .method-ico { width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); flex-shrink: 0; }
-.method-title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
-.method-p { font-size: 15px; line-height: 1.75; color: var(--text-secondary); margin: 0 0 14px 0; max-width: 860px; }
+.method-title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+.method-p { font-size: 14px; line-height: 1.7; color: var(--text-secondary); margin: 0 0 14px 0; max-width: 860px; }
 .method-p:last-child { margin-bottom: 0; }
-.method-p b { color: var(--text-primary); font-weight: 600; }
-.method-p i { color: var(--text-primary); font-style: italic; }
 
-/* ── RESPONSIVE ADD-ONS ───────────────────────────────────── */
+/* Responsive */
 @media (max-width: 1024px) {
     .layout-row-2 { grid-template-columns: 1fr; }
     .kpi-row { grid-template-columns: 1fr 1fr; }
@@ -279,11 +252,9 @@ svg { display: block; }
     .nav-menu { flex-direction: row; overflow-x: auto; gap: 4px; }
     .nav-item { padding: 8px 12px; }
     .nav-label { display: block; }
-    .sidebar-toggle, .collapse-btn, .sidebar-foot { display: none; }
+    .sidebar-toggle, .collapse-btn { display: none; }
     .main-content { padding: 20px 16px; }
     .hero-score { font-size: 48px; }
     .kpi-row { grid-template-columns: 1fr; }
-    .status-grid { grid-template-columns: 1fr 1fr; }
-    .method-lead { font-size: 15px; }
     .nav-extra { padding: 0 4px; margin: 0; align-items: center; }
 }
