@@ -2,14 +2,17 @@ import os
 import urllib.parse
 import xml.etree.ElementTree as ET
 import json
-import threading
 import concurrent.futures
 import traceback
-import pickle
 import tempfile
-import random
 from datetime import datetime, timedelta
 from functools import lru_cache
+
+# DO NOT REMOVE: time, random, threading, pickle are required by load_data()'s retry/cache logic
+import time
+import random
+import threading
+import pickle
 
 import numpy as np
 import pandas as pd
@@ -195,6 +198,7 @@ def tint(hex_color, alpha):
 #  DATA LOGIC & ASYNC FETCHING
 # ─────────────────────────────────────────────────────────────────────────────
 def fetch_single_ticker(name, t_sym):
+    """Fetches a single ticker, handling fallback & exponential backoff sequentially."""
     close = None
     for attempt in range(4):
         try:
@@ -214,6 +218,7 @@ def fetch_single_ticker(name, t_sym):
     return name, close if close is not None else pd.Series(dtype=float), "yfinance"
 
 def fetch_fg():
+    """Background fetcher for Fear & Greed."""
     if HAS_FG:
         try:
             FG_CACHE['data'] = fear_and_greed.get()
@@ -222,6 +227,7 @@ def fetch_fg():
             pass
 
 def load_data():
+    """Sequential robust fetching with cache and FRED fallbacks to avoid Rate Limits."""
     global DATA_SOURCE  
     tickers = {'S&P500': '^GSPC', 'VIX': '^VIX', 'Gold': 'GC=F', 'Oil_WTI': 'CL=F', 'USD_Index': 'DX-Y.NYB'}
     fred_map = {'VIX': 'VIXCLS', 'Oil_WTI': 'DCOILWTICO'}
@@ -239,46 +245,57 @@ def load_data():
     log_msgs = []
     now = datetime.now()
 
+    # Fire off F&G independently so network lag doesn't block the layout
     threading.Thread(target=fetch_fg, daemon=True).start()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(fetch_single_ticker, name, sym): name for name, sym in tickers.items()}
-        for future in concurrent.futures.as_completed(futures):
-            name, series, src_name = future.result()
-            
-            if series.empty:
-                cached_item = cache.get(name)
-                if cached_item and (now - cached_item['timestamp']) < timedelta(hours=24):
-                    series = cached_item['data']
-                    src_name = "cache (fresh)"
-                    
-            if series.empty and name in fred_map:
-                try:
-                    fred_id = fred_map[name]
-                    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={fred_id}"
-                    df_fred = pd.read_csv(url, na_values='.', parse_dates=['DATE'], index_col='DATE')
-                    df_fred.index = pd.to_datetime(df_fred.index)
-                    if df_fred.index.tz is not None: df_fred.index = df_fred.index.tz_localize(None)
-                    df_fred = df_fred.dropna()
-                    df_fred = df_fred[df_fred.index >= '2005-01-01']
-                    if not df_fred.empty:
-                        series = df_fred[fred_id]
-                        src_name = f"fred:{fred_id}"
-                except Exception:
-                    pass
+    # SEQUENTIAL fetch to strictly avoid Yahoo rate limits (No ThreadPoolExecutor)
+    for name, sym in tickers.items():
+        series = pd.Series(dtype=float)
+        src_name = "none"
 
-            if series.empty and name in cache:
-                series = cache[name]['data']
-                src_name = "cache (stale)"
+        # 1. Check fresh cache (24h TTL)
+        cached_item = cache.get(name)
+        if cached_item and (now - cached_item['timestamp']) < timedelta(hours=24):
+            series = cached_item['data']
+            src_name = "cache (fresh)"
+        
+        # 2. Try yfinance with backoff + jitter
+        if series.empty:
+            _, series, src_name = fetch_single_ticker(name, sym)
 
-            if not series.empty:
-                data[name] = series
-                cache[name] = {'data': series, 'timestamp': now if "cache" not in src_name else cache[name]['timestamp']}
-                sources_used[name] = src_name
-                log_msgs.append(f"{name}: {src_name} ({len(series)})")
-            else:
-                log_msgs.append(f"{name}: FAILED")
+        # 3. Try FRED fallback
+        if series.empty and name in fred_map:
+            try:
+                fred_id = fred_map[name]
+                url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={fred_id}"
+                df_fred = pd.read_csv(url, na_values='.', parse_dates=['DATE'], index_col='DATE')
+                df_fred.index = pd.to_datetime(df_fred.index)
+                if df_fred.index.tz is not None: df_fred.index = df_fred.index.tz_localize(None)
+                df_fred = df_fred.dropna()
+                df_fred = df_fred[df_fred.index >= '2005-01-01']
+                if not df_fred.empty:
+                    series = df_fred[fred_id]
+                    src_name = f"fred:{fred_id}"
+            except Exception:
+                pass
 
+        # 4. Fallback to expired cache
+        if series.empty and cached_item:
+            series = cached_item['data']
+            src_name = "cache (stale)"
+
+        if not series.empty:
+            data[name] = series
+            # Prevent updating timestamp if it came from cache
+            cache_ts = now if "cache" not in src_name else cached_item['timestamp']
+            cache[name] = {'data': series, 'timestamp': cache_ts}
+            sources_used[name] = src_name
+            log_msgs.append(f"{name}: {src_name} ({len(series)})")
+        else:
+            data[name] = pd.Series(dtype=float)
+            log_msgs.append(f"{name}: FAILED")
+
+    # Save cache
     try:
         with open(RAW_CACHE_FILE, 'wb') as f:
             pickle.dump(cache, f)
@@ -289,31 +306,53 @@ def load_data():
     unique_sources = set(sources_used.values())
     DATA_SOURCE = ", ".join(unique_sources) if unique_sources else "unknown"
 
-    if not data: return pd.DataFrame()
-    return pd.DataFrame(data).ffill().dropna()
+    # Only compile valid series into the DataFrame to prevent dropna() crashes
+    valid_data = {k: v for k, v in data.items() if not v.empty}
+    if not valid_data: 
+        return pd.DataFrame()
+        
+    df = pd.DataFrame(valid_data)
+    df = df.ffill().dropna()
+    return df
 
 def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
     df = prices.copy()
-    price_assets = ['S&P500', 'Gold', 'Oil_WTI', 'USD_Index']
-    for col in price_assets:
+    
+    # Gracefully handle completely missing signals
+    active_price_assets = [c for c in ['S&P500', 'Gold', 'Oil_WTI', 'USD_Index'] if c in df.columns]
+    active_signals = [c for c in SIGNALS if c in df.columns]
+
+    for col in active_price_assets:
         df[f'{col}_Return'] = np.log(df[col] / df[col].shift(1))
         df[f'{col}_RollMean'] = df[f'{col}_Return'].rolling(window).mean()
         df[f'{col}_RollStd'] = df[f'{col}_Return'].rolling(window).std()
         df[f'{col}_Zscore'] = (df[f'{col}_Return'] - df[f'{col}_RollMean']) / df[f'{col}_RollStd']
 
-    df['VIX_RollMean'] = df['VIX'].rolling(window).mean()
-    df['VIX_RollStd'] = df['VIX'].rolling(window).std()
-    df['VIX_Zscore'] = (df['VIX'] - df['VIX_RollMean']) / df['VIX_RollStd']
+    if 'VIX' in df.columns:
+        df['VIX_RollMean'] = df['VIX'].rolling(window).mean()
+        df['VIX_RollStd'] = df['VIX'].rolling(window).std()
+        df['VIX_Zscore'] = (df['VIX'] - df['VIX_RollMean']) / df['VIX_RollStd']
 
-    zcols = [f'{s}_Zscore' for s in SIGNALS]
+    zcols = [f'{s}_Zscore' for s in active_signals]
     n = len(zcols)
+    
+    if n == 0:
+        df['Anomaly_Score'] = np.nan
+        df['Threshold'] = np.nan
+        df['Flagged'] = False
+        return df
+
     sum_sq = (df[zcols] ** 2).sum(axis=1)
     safe = sum_sq.replace(0, np.nan)
     df['Sum_Sq_Z'] = sum_sq
     df['Anomaly_Score'] = np.sqrt(sum_sq / n)
 
-    for s in SIGNALS:
+    for s in active_signals:
         df[f'{s}_Contribution'] = (df[f'{s}_Zscore'] ** 2 / safe) * 100
+        
+    for s in SIGNALS:
+        if s not in active_signals:
+            df[f'{s}_Contribution'] = np.nan
 
     df['Anomaly_PValue'] = chi2.sf(df['Sum_Sq_Z'].values, df=n) if HAS_SCIPY else np.nan
     exp_mean = df['Anomaly_Score'].expanding(min_periods=burn_in).mean().shift(1)
@@ -323,8 +362,22 @@ def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
     return df
 
 def compute_isolation_forest(scored_df, contamination):
-    zcols = [f'{s}_Zscore' for s in SIGNALS]
+    active_signals = [s for s in SIGNALS if f'{s}_Zscore' in scored_df.columns]
+    zcols = [f'{s}_Zscore' for s in active_signals]
+    
+    if not zcols:
+        out = pd.DataFrame(index=scored_df.index)
+        out['IF_Score'] = np.nan
+        out['IF_Flagged'] = False
+        return out
+        
     feat = scored_df[zcols].dropna()
+    if feat.empty:
+        out = pd.DataFrame(index=scored_df.index)
+        out['IF_Score'] = np.nan
+        out['IF_Flagged'] = False
+        return out
+        
     clf = IsolationForest(n_estimators=300, contamination=contamination, random_state=42)
     clf.fit(feat.values)
     out = pd.DataFrame(index=feat.index)
@@ -372,6 +425,7 @@ VAL = VAL_IF = None
 AVAIL_YEARS = []
 SUMMARY = {}
 DATA_OK = False
+DATA_LOADING = False
 LOAD_ERR = ""
 TRADING_DAYS = 0
 LOADED_AT = "—"
@@ -381,7 +435,6 @@ LOCK_FILE = os.path.join(TEMP_DIR, "anomaly_dash_init.lock")
 STATE_FILE = os.path.join(TEMP_DIR, "anomaly_dash_state.pkl")
 RAW_CACHE_FILE = os.path.join(TEMP_DIR, "anomaly_raw_prices.pkl")
 _LOCAL_CACHE_TS = 0
-FG_CACHE = {'timestamp': None, 'data': None}
 
 def sync_state():
     global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT, DATA_SOURCE, _LOCAL_CACHE_TS
@@ -410,7 +463,8 @@ def init_data():
     global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT
     prices = load_data()
     if prices.empty:
-        raise ValueError("Data fetch returned empty DataFrame.")
+        raise ValueError("Data fetch returned empty DataFrame. No signals available.")
+    
     DF = compute_anomaly(prices)
     VAL = validate_events(DF, HISTORICAL_EVENTS, 'Flagged')
     detected = sum(r['detected'] for r in VAL)
@@ -493,7 +547,7 @@ def dual_market_narrative(row):
     def generate(lang):
         asset_display = t('assets', lang).get(top_asset_key, top_asset_key)
         status_label, _color = get_market_status(score, thresh, lang)
-        if score < thresh:
+        if score < thresh or pd.isna(score):
             return t('narrative_calm', lang).format(status=status_label, driver=asset_display)
         else:
             return t('narrative_warn', lang).format(status=status_label, driver=asset_display, pct=pct)
@@ -514,7 +568,7 @@ def build_figure(view, current_color, lang='en'):
     else:
         plot_df = DF.resample("ME").last()
 
-    y_top = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) * 1.15
+    y_top = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) * 1.15 if not plot_df.empty else 1.0
     fig = go.Figure()
 
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines',
@@ -568,7 +622,14 @@ def build_figure(view, current_color, lang='en'):
 
 def build_contribution_chart(r_color, lang='en'):
     row = DF.iloc[-1]
-    contribs = {t('assets', lang).get(s, s): row.get(f'{s}_Contribution', 0) for s in SIGNALS}
+    contribs = {}
+    for s in SIGNALS:
+        val = row.get(f'{s}_Contribution', np.nan)
+        if pd.notna(val):
+            contribs[t('assets', lang).get(s, s)] = val
+        else:
+            contribs[t('assets', lang).get(s, s) + f" ({t('unavailable', lang)})"] = 0.0
+
     contribs = dict(sorted(contribs.items(), key=lambda item: item[1]))
     colors = [r_color if i == len(contribs)-1 else 'rgba(255,255,255,0.12)' for i in range(len(contribs))]
 
@@ -632,7 +693,11 @@ def hero_section():
     gap = score - thresh
     up = gap >= 0
     delta_class = 'delta up' if up else 'delta down'
-    delta_val = f"{'▲' if up else '▼'} {abs(gap):.2f} "
+    
+    score_display = f"{score:.2f}" if pd.notna(score) else "—"
+    gap_display = f"{abs(gap):.2f}" if pd.notna(gap) else "—"
+    delta_val = f"{'▲' if up else '▼'} {gap_display} "
+    
     conf_score = "99.8%" 
     
     status_span = html.Span([html.Span(get_market_status(score, thresh, 'en')[0], className='lang-en'), html.Span(get_market_status(score, thresh, 'ar')[0], className='lang-ar')])
@@ -646,7 +711,7 @@ def hero_section():
             ])
         ]),
         html.Div(className='hero-body', children=[
-            html.Div(f"{score:.2f}", className='hero-score', style={'color': r_color, 'textShadow': f'0 0 32px {tint(r_color, 0.3)}'}),
+            html.Div(score_display, className='hero-score', style={'color': r_color, 'textShadow': f'0 0 32px {tint(r_color, 0.3)}'}),
             html.Div(className='hero-metrics', children=[
                 html.Span([delta_val, trans('vs_thresh')], className=delta_class, style={'color': r_color, 'backgroundColor': tint(r_color, 0.1)}),
                 html.Span([trans('last_updated'), f" {SUMMARY['updated']}"], className='hero-timestamp')
@@ -685,10 +750,13 @@ def alert_card(date_idx, row):
         html.Span(f"{get_asset(top_asset, 'ar')} {top_pct:.0f}%", className='lang-ar')
     ]) if pd.notna(top_pct) else "—"
 
+    sp500_val = f"{row['S&P500']:,.0f}" if 'S&P500' in row and pd.notna(row['S&P500']) else trans('unavailable')
+    vix_val = f"{row['VIX']:.1f}" if 'VIX' in row and pd.notna(row['VIX']) else trans('unavailable')
+
     stats = [
         stat_chip('top_driver', driver_txt, driver=True),
-        stat_chip("S&P 500", f"{row['S&P500']:,.0f}"),
-        stat_chip("VIX", f"{row['VIX']:.1f}"),
+        stat_chip("S&P 500", sp500_val),
+        stat_chip("VIX", vix_val),
         stat_chip('chart_limit', f"{row['Threshold']:.2f}"),
     ]
     pval = row.get('Anomaly_PValue', np.nan)
@@ -855,9 +923,6 @@ def sidebar():
         ]),
         html.Div(className='nav-container', children=[
             html.Div(nav, className='nav-menu'),
-            html.Div(className='nav-extra', children=[
-                html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
-            ]),
         ])
     ])
 
@@ -931,12 +996,14 @@ def serve_layout():
     overview_html = build_view("overview")
 
     return html.Div(id='root-container', className='app-container lang-en', dir='ltr', children=[
-        dcc.Interval(id='render-interval', interval=200, max_intervals=1),
         dcc.Store(id='tr-store', data=TR),
         dcc.Store(id='nav-dummy'), dcc.Store(id='collapse-dummy'),
         sidebar(),
         html.Div(className='main-content', children=[
             html.Div(className='top-nav', children=[
+                html.Div(className='nav-extra', children=[
+                    html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
+                ]),
                 html.Div(className='status-indicator', children=[
                     html.Span(className='status-dot', style={'background': POS, 'boxShadow': f'0 0 10px {POS}'}),
                     html.Span(trans('live_data'), className='status-src')
@@ -960,7 +1027,7 @@ def build_view(view_key, lang='en'):
         row_2 = html.Div(className='fintech-grid layout-row-2', children=[
             html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('drivers_today'), className='card-title'),
-                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=get_empty_fig(), config={'displayModeBar': False})])
+                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=build_contribution_chart(r_color, 'en'), config={'displayModeBar': False})])
             ]),
             html.Div(className='glass-card flex-col', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('market_narrative'), className='card-title'),
@@ -1030,7 +1097,6 @@ app.layout = serve_layout
 @callback(Output('boot-trigger', 'children'), Input('boot-interval', 'n_intervals'))
 def check_boot_state(n):
     sync_state()
-    print(f"[POLL] DATA_OK: {DATA_OK}, Lock exists: {os.path.exists(LOCK_FILE)}")
     if DATA_OK: return "READY"
     if LOAD_ERR or not os.path.exists(LOCK_FILE): return "ERROR"
     return "LOADING"
@@ -1066,19 +1132,6 @@ def switch_view(n_clicks, current_class):
     
     return view_html, nav_classes
 
-@callback(
-    Output('contrib-chart', 'figure'),
-    Input('render-interval', 'n_intervals'),
-    State('root-container', 'className'),
-    prevent_initial_call=True
-)
-def load_deferred_charts(n, current_class):
-    if not DATA_OK: return no_update
-    lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
-    latest = DF.iloc[-1]
-    _, r_color = get_market_status(latest['Anomaly_Score'], latest['Threshold'], lang)
-    return build_contribution_chart(r_color, lang)
-
 @callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
 def update_timeline_chart(view, current_class):
     if not DATA_OK: return no_update
@@ -1111,7 +1164,7 @@ def load_news(n_clicks, btn_id):
         html.A("Read Source ↗", href=link, target="_blank", className='news-link'),
     ]) for (title, link, pub) in news]
 
-# Decoupled Language Switcher. Instant updates using Plotly.relayout/restyle
+# Instant UI Language Switch & Plotly Chart Restyling (Decoupled from Outputs to prevent failing on hidden charts)
 app.clientside_callback(
     """
     function(n_clicks, tr_data, current_class) {
