@@ -1,6 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-/* ── Arabic Font Support (Optimized) ── */
+/* ── Arabic Font Support (Optimized, only used weights loaded) ── */
 @font-face {
     font-family: 'ThmanyahSans';
     src: url('/assets/fonts/ThmanyahSans-Regular.woff2') format('woff2');
@@ -54,6 +54,7 @@ svg { display: block; }
 .app-container.lang-en .lang-ar { display: none !important; }
 .app-container.lang-ar .lang-en { display: none !important; }
 
+/* Font Application Logic */
 .font-ar { font-family: 'ThmanyahSans', var(--font-sans); letter-spacing: 0; }
 .font-ar .narrative-text, .font-ar .method-p { font-family: 'ThmanyahSerifText', 'ThmanyahSans', sans-serif; font-size: 16px; line-height: 1.8; }
 .font-ar .hero-score { font-family: 'ThmanyahSans', sans-serif; font-weight: 700; }
@@ -79,8 +80,28 @@ svg { display: block; }
 .brand-word { max-width: 100px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; font-size: 15px; }
 .nav-label { max-width: 120px; display: inline-block; }
 
-.lang-toggle-btn { background: transparent; border: 1px solid var(--glass-border); color: var(--text-primary); border-radius: 6px; padding: 6px 10px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; flex-shrink: 0; }
-.lang-toggle-btn:hover { background: var(--glass-hover); }
+/* Accented Language Toggle Button */
+.lang-toggle-btn { 
+    background: rgba(245, 166, 35, 0.08); 
+    border: 1px solid rgba(245, 166, 35, 0.3); 
+    color: var(--warning); 
+    border-radius: 8px; 
+    padding: 8px 14px; 
+    font-size: 12px; 
+    font-weight: 600; 
+    cursor: pointer; 
+    transition: all 0.2s var(--ease); 
+    font-family: inherit; 
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.lang-toggle-btn:hover { 
+    background: rgba(245, 166, 35, 0.15); 
+    box-shadow: 0 0 12px rgba(245, 166, 35, 0.2); 
+    border-color: rgba(245, 166, 35, 0.5); 
+}
 
 .collapse-btn { background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; transition: background 0.2s var(--ease), color 0.2s var(--ease); margin-top: 8px; }
 .collapse-btn:hover { background: var(--glass-hover); color: var(--text-primary); }
@@ -96,9 +117,13 @@ svg { display: block; }
 /* Fade out */
 .app-container.collapsed .brand-word, .app-container.collapsed .nav-label { max-width: 0; opacity: 0; margin: 0; padding: 0; gap: 0; border-width: 0; }
 .app-container.collapsed .nav-item { justify-content: center; padding: 10px; gap: 0; }
+.app-container.collapsed .nav-extra { padding: 0; justify-content: center; }
 
-/* Nav Menu */
+/* Nav Menu & Extra */
+.nav-container { display: flex; flex-direction: column; gap: 12px; }
 .nav-menu { display: flex; flex-direction: column; gap: 6px; }
+.nav-extra { display: flex; justify-content: flex-start; padding: 0 14px; margin-top: 4px; transition: padding 0.3s var(--ease); }
+
 .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px; color: var(--text-secondary); font-size: 13.5px; font-weight: 500; cursor: pointer; transition: all 0.3s var(--ease); white-space: nowrap; }
 .nav-item .ico { width: 16px; text-align: center; flex-shrink: 0; }
 .nav-item:hover { background: var(--glass-hover); color: var(--text-primary); }
@@ -208,22 +233,16 @@ svg { display: block; }
 .view { width: 100%; }
 .ico-fallback { background: currentColor; opacity: 0.25; border-radius: 3px; }
 
-/* ── DATA STATUS PANEL (methodology) ──────────────────────── */
-.status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 20px; }
-.status-cell { display: flex; flex-direction: column; gap: 6px; }
-.status-key { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); font-weight: 500; }
-.status-val { font-size: 16px; font-weight: 600; font-family: var(--font-mono); letter-spacing: -0.01em; }
-
-/* ── METHODOLOGY VIEW ─────────────────────────────────────── */
-.method-lead { font-size: 17px; line-height: 1.6; color: var(--text-secondary); max-width: 760px; margin: 0 0 24px 0; }
+/* Methodology Block */
+.method-lead { font-size: 16px; line-height: 1.6; color: var(--text-secondary); max-width: 800px; margin: 0 0 24px 0; }
 .method-block { margin-bottom: 20px; }
 .method-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 .method-ico { width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); flex-shrink: 0; }
-.method-title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
-.method-p { font-size: 15px; line-height: 1.75; color: var(--text-secondary); margin: 0 0 14px 0; max-width: 860px; }
+.method-title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+.method-p { font-size: 14px; line-height: 1.7; color: var(--text-secondary); margin: 0 0 14px 0; max-width: 860px; }
 .method-p:last-child { margin-bottom: 0; }
 
-/* ── RESPONSIVE ADD-ONS ───────────────────────────────────── */
+/* Responsive */
 @media (max-width: 1024px) {
     .layout-row-2 { grid-template-columns: 1fr; }
     .kpi-row { grid-template-columns: 1fr 1fr; }
@@ -238,6 +257,5 @@ svg { display: block; }
     .main-content { padding: 20px 16px; }
     .hero-score { font-size: 48px; }
     .kpi-row { grid-template-columns: 1fr; }
-    .status-grid { grid-template-columns: 1fr 1fr; }
-    .method-lead { font-size: 15px; }
+    .nav-extra { padding: 0 4px; margin: 0; align-items: center; }
 }
