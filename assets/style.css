@@ -1,5 +1,49 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
+/* ── Arabic Font Support ── */
+@font-face {
+    font-family: 'ThmanyahSans';
+    src: url('/assets/fonts/ThmanyahSans-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'ThmanyahSans';
+    src: url('/assets/fonts/ThmanyahSans-Medium.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'ThmanyahSans';
+    src: url('/assets/fonts/ThmanyahSans-SemiBold.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'ThmanyahSans';
+    src: url('/assets/fonts/ThmanyahSans-Bold.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'ThmanyahSerifText';
+    src: url('/assets/fonts/ThmanyahSerifText-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'ThmanyahSerifDisplay';
+    src: url('/assets/fonts/ThmanyahSerifDisplay-Bold.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
 :root {
     --bg-base: #000000;
     --bg-surface: #0A0A0A;
@@ -27,8 +71,9 @@ html, body { margin: 0; padding: 0; background: var(--bg-base); color: var(--tex
 a { text-decoration: none; color: inherit; }
 svg { display: block; }
 
-/* ── Arabic Font Support ── */
-.font-ar { font-family: 'Thmanyah Sans', var(--font-sans); }
+.font-ar { font-family: 'ThmanyahSans', 'Segoe UI', Tahoma, sans-serif; }
+.font-ar .narrative-text { font-family: 'ThmanyahSerifText', 'ThmanyahSans', sans-serif; }
+.font-ar .hero-score { font-family: 'ThmanyahSerifDisplay', 'ThmanyahSans', sans-serif; font-weight: 700; }
 
 /* Layout */
 .app-container { display: flex; min-height: 100vh; overflow-x: hidden; direction: ltr; }
