@@ -237,7 +237,6 @@ def load_data():
     log_msgs = []
     now = datetime.now()
 
-    # Fire off F&G independently
     threading.Thread(target=fetch_fg, daemon=True).start()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
@@ -245,14 +244,12 @@ def load_data():
         for future in concurrent.futures.as_completed(futures):
             name, series, src_name = future.result()
             
-            # Check cache if yfinance failed
             if series.empty:
                 cached_item = cache.get(name)
                 if cached_item and (now - cached_item['timestamp']) < timedelta(hours=24):
                     series = cached_item['data']
                     src_name = "cache (fresh)"
                     
-            # Try FRED if still empty
             if series.empty and name in fred_map:
                 try:
                     fred_id = fred_map[name]
@@ -268,7 +265,6 @@ def load_data():
                 except Exception:
                     pass
 
-            # Final fallback to stale cache
             if series.empty and name in cache:
                 series = cache[name]['data']
                 src_name = "cache (stale)"
@@ -512,7 +508,7 @@ def build_figure(view, current_color, lang='en'):
     elif view == "Last 2 Years" or view == t('ranges', lang).get("Last 2 Years"):
         plot_df = DF.tail(504).resample("W").last()
     else:
-        plot_df = DF.resample("ME").last() # Aggressively downsample full history
+        plot_df = DF.resample("ME").last()
 
     y_top = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) * 1.15
     fig = go.Figure()
@@ -712,7 +708,9 @@ def alert_card(date_idx, row):
     details_children.append(
         html.Button(trans('load_headlines'), id={'type': 'news-btn', 'index': date_str},
                     n_clicks=0, className='news-load-btn'))
-    details_children.append(html.Div(id={'type': 'news-out', 'index': date_str}))
+    details_children.append(
+        dcc.Loading(type='circle', color=ACCENT,
+                    children=html.Div(id={'type': 'news-out', 'index': date_str})))
 
     return html.Div(className='alert glass-card', **{'data-aos': 'fade-up'}, children=[
         html.Div(className='alert-rail', style={'background': sev}),
@@ -740,7 +738,7 @@ def build_cards(year, month):
         flags = flags[flags.index.month == m_idx]
 
     note = None
-    if len(flags) > 20: # Drastically reduced from 60 to prevent DOM lockup
+    if len(flags) > 20: 
         flags = flags.head(20)
         note = html.Div(trans('showing_recent'), className='context-box')
     if len(flags) == 0:
@@ -927,7 +925,6 @@ def serve_layout():
     if not DATA_OK:
         return html.Div(className='error-screen', children=[html.H1("Service Unavailable"), html.P("Market data failed to load. See server logs for details."), html.Code(LOAD_ERR)])
 
-    # Pre-render ONLY overview to slash initial load time
     overview_html = build_view("overview")
 
     return html.Div(id='root-container', className='app-container lang-en', dir='ltr', children=[
@@ -1026,7 +1023,6 @@ app.layout = serve_layout
 #  CALLBACKS
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Polling callback for background boot status
 @callback(Output('boot-trigger', 'children'), Input('boot-interval', 'n_intervals'))
 def check_boot_state(n):
     sync_state()
@@ -1045,7 +1041,6 @@ app.clientside_callback(
     Output('boot-interval', 'disabled'), Input('boot-trigger', 'children'), prevent_initial_call=True
 )
 
-# TRUE Lazy-Loading Server Callback. Replaces CSS "display: none" switcher.
 @callback(
     Output('views-wrap', 'children'),
     Output({'type': 'nav', 'index': ALL}, 'className'),
@@ -1067,7 +1062,6 @@ def switch_view(n_clicks, current_class):
     
     return view_html, nav_classes
 
-# Timeline dropdown update
 @callback(Output('anomaly-chart', 'figure'), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
 def update_timeline_chart(view, current_class):
     if not DATA_OK: return no_update
@@ -1100,18 +1094,16 @@ def load_news(n_clicks, btn_id):
         html.A("Read Source ↗", href=link, target="_blank", className='news-link'),
     ]) for (title, link, pub) in news]
 
-# Instant UI Language Switch & Plotly Chart Restyling
 app.clientside_callback(
     """
-    function(n_clicks, tr_data, current_class, fig_over, fig_time, fig_contrib) {
+    function(n_clicks, tr_data, current_class) {
         if (!n_clicks || !document.querySelector('.app-container')) return window.dash_clientside.no_update;
         
-        console.time('lang-switch-render');
+        console.time('plotly-lang-render');
         const new_lang = current_class.includes('lang-en') ? 'ar' : 'en';
         const is_ar = new_lang === 'ar';
         const TR = tr_data[new_lang];
         
-        // CSS handles pure text. JS safely targets Plotly via generic class query.
         setTimeout(() => {
             const plots = document.querySelectorAll('.js-plotly-plot');
             plots.forEach(plot => {
@@ -1155,22 +1147,21 @@ app.clientside_callback(
                     Plotly.restyle(plot, {y: [newY]}, [0]);
                 }
             });
-            console.timeEnd('lang-switch-render');
+            console.timeEnd('plotly-lang-render');
         }, 50);
         
         const dir = is_ar ? 'rtl' : 'ltr';
         const cls = 'app-container lang-' + new_lang + (is_ar ? ' font-ar' : '');
+        
         return [dir, cls];
     }
     """,
     Output('root-container', 'dir'), Output('root-container', 'className'),
     Input('lang-toggle', 'n_clicks'),
     State('tr-store', 'data'), State('root-container', 'className'),
-    State('overview-chart', 'figure'), State('anomaly-chart', 'figure'), State('contrib-chart', 'figure'),
     prevent_initial_call=True
 )
 
-# Sidebar Collapse
 app.clientside_callback(
     """
     function(n_clicks) {
