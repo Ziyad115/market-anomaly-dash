@@ -4,6 +4,9 @@ import xml.etree.ElementTree as ET
 import json
 import threading
 import concurrent.futures
+import traceback
+import pickle
+import tempfile
 from datetime import datetime, timedelta
 from functools import lru_cache
 
@@ -322,22 +325,51 @@ def get_news_for_date(date_str, days_window=1):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  STARTUP & ASYNC CACHE
+#  STARTUP & ASYNC STATE CACHE
 # ─────────────────────────────────────────────────────────────────────────────
 DF = DF_IF = None
 VAL = VAL_IF = None
 AVAIL_YEARS = []
 SUMMARY = {}
 DATA_OK = False
-DATA_LOADING = False
 LOAD_ERR = ""
 TRADING_DAYS = 0
 LOADED_AT = "—"
+
+TEMP_DIR = tempfile.gettempdir()
+LOCK_FILE = os.path.join(TEMP_DIR, "anomaly_dash_init.lock")
+STATE_FILE = os.path.join(TEMP_DIR, "anomaly_dash_state.pkl")
+_LOCAL_CACHE_TS = 0
 FG_CACHE = {'timestamp': None, 'data': None}
+
+def sync_state():
+    """Reads latest state from pickle file to bypass Gunicorn multi-worker isolation."""
+    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT, DATA_SOURCE, _LOCAL_CACHE_TS
+    if not os.path.exists(STATE_FILE):
+        return
+    mtime = os.path.getmtime(STATE_FILE)
+    if mtime > _LOCAL_CACHE_TS:
+        try:
+            with open(STATE_FILE, "rb") as f:
+                state = pickle.load(f)
+            DF = state.get('DF')
+            DF_IF = state.get('DF_IF')
+            VAL = state.get('VAL')
+            VAL_IF = state.get('VAL_IF')
+            AVAIL_YEARS = state.get('AVAIL_YEARS')
+            SUMMARY = state.get('SUMMARY')
+            DATA_OK = state.get('DATA_OK')
+            LOAD_ERR = state.get('LOAD_ERR')
+            TRADING_DAYS = state.get('TRADING_DAYS')
+            LOADED_AT = state.get('LOADED_AT')
+            DATA_SOURCE = state.get('DATA_SOURCE')
+            _LOCAL_CACHE_TS = mtime
+            print(f"[SYNC] Worker synced state from disk (mtime: {mtime})")
+        except Exception as e:
+            print(f"[SYNC ERROR] Failed to load state: {e}")
 
 def init_data():
     global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT
-
     prices = load_data()
     DF = compute_anomaly(prices)
     VAL = validate_events(DF, HISTORICAL_EVENTS, 'Flagged')
@@ -369,15 +401,35 @@ def init_data():
     DATA_OK = True
 
 def run_init_in_background():
-    global DATA_LOADING, DATA_OK, LOAD_ERR
-    DATA_LOADING = True
+    # Prevent multiple Gunicorn workers from pounding the API simultaneously
+    if os.path.exists(LOCK_FILE):
+        print("[INIT] Lock file exists. Another worker is already fetching data.")
+        return
+        
+    print("[INIT] Starting background data load...")
     try:
+        open(LOCK_FILE, "w").close() 
         init_data()
+        
+        state = {
+            'DF': DF, 'DF_IF': DF_IF, 'VAL': VAL, 'VAL_IF': VAL_IF,
+            'AVAIL_YEARS': AVAIL_YEARS, 'SUMMARY': SUMMARY, 'DATA_OK': DATA_OK,
+            'LOAD_ERR': LOAD_ERR, 'TRADING_DAYS': TRADING_DAYS, 
+            'LOADED_AT': LOADED_AT, 'DATA_SOURCE': DATA_SOURCE
+        }
+        with open(STATE_FILE, "wb") as f:
+            pickle.dump(state, f)
+        print("[INIT] Background data load complete. State saved to disk.")
+        
     except Exception as e:
-        DATA_OK = False
-        LOAD_ERR = str(e)
+        err = traceback.format_exc()
+        print(f"[INIT ERROR] Exception during data load:\n{err}")
+        state = {'DATA_OK': False, 'LOAD_ERR': str(e)}
+        with open(STATE_FILE, "wb") as f:
+            pickle.dump(state, f)
     finally:
-        DATA_LOADING = False
+        if os.path.exists(LOCK_FILE):
+            os.remove(LOCK_FILE)
 
 # Kick off non-blocking background thread on boot
 if not os.environ.get("APP_SKIP_LOAD"):
@@ -501,6 +553,7 @@ def fear_greed_kpi():
     fg_color = MUTE
     desc_comp = trans('unavailable')
     
+    # Read instantly from cached value prepared in init_data() 
     if HAS_FG:
         if FG_CACHE.get('data'):
             fg = FG_CACHE['data']
@@ -805,8 +858,11 @@ app.index_string = '''<!DOCTYPE html>
 </html>'''
 
 def serve_layout():
-    # If currently loading in background, serve instantly-rendered skeleton loader
-    if DATA_LOADING and not DATA_OK:
+    # Attempt to load state in case a different Gunicorn worker updated the cache
+    sync_state()
+    
+    # If loading in background, serve instantly-rendered skeleton loader
+    if not DATA_OK and os.path.exists(LOCK_FILE):
         return html.Div(
             style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'justifyContent': 'center', 'height': '100vh', 'backgroundColor': '#0A0A0A', 'fontFamily': 'Inter, sans-serif'},
             children=[
@@ -923,14 +979,18 @@ app.layout = serve_layout
 # Polling callback for background boot status
 @callback(Output('boot-trigger', 'children'), Input('boot-interval', 'n_intervals'))
 def check_boot_state(n):
-    if DATA_OK or (not DATA_LOADING and not DATA_OK):
+    sync_state()
+    print(f"[POLL] DATA_OK: {DATA_OK}, Error: {LOAD_ERR}, Lock exists: {os.path.exists(LOCK_FILE)}")
+    if DATA_OK:
         return "READY"
+    if LOAD_ERR or not os.path.exists(LOCK_FILE):
+        return "ERROR"
     return "LOADING"
 
 app.clientside_callback(
     """
     function(status) {
-        if (status === "READY") { window.location.reload(true); }
+        if (status === "READY" || status === "ERROR") { window.location.reload(true); }
         return window.dash_clientside.no_update;
     }
     """,
@@ -973,12 +1033,14 @@ def load_news(n_clicks, btn_id):
 app.clientside_callback(
     """
     function(n_clicks, tr_data, current_class, fig_over, fig_time, fig_contrib) {
+        // Protect against execution before the DOM layout initializes
         if (!n_clicks || !document.querySelector('.app-container')) return window.dash_clientside.no_update;
         
         const new_lang = current_class.includes('lang-en') ? 'ar' : 'en';
         const is_ar = new_lang === 'ar';
         const TR = tr_data[new_lang];
         
+        // Deep copy figures to avoid reference mutation errors in Dash
         let f1 = fig_over ? JSON.parse(JSON.stringify(fig_over)) : null;
         let f2 = fig_time ? JSON.parse(JSON.stringify(fig_time)) : null;
         let f3 = fig_contrib ? JSON.parse(JSON.stringify(fig_contrib)) : null;
