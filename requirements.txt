@@ -8,4 +8,3 @@ scipy
 scikit-learn
 fear_and_greed
 dash_iconify
-gunicorn
