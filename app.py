@@ -284,15 +284,15 @@ def generate_market_narrative(row):
     regime, _ = get_market_regime(score, thresh)
     
     if score < thresh:
-        return f"Composite stress remains below the structural threshold. Market regime is classified as {regime}. {DISPLAY[top_asset]} and volatility are currently the largest contributors to the background score. No broad-based systemic stress or anomalous behavior is detected."
+        return f"Composite stress remains below the structural threshold. Market status is classified as {regime}. {DISPLAY[top_asset]} and volatility are currently the largest contributors to the background score. No broad-based systemic stress or anomalous behavior is detected."
     else:
-        return f"Warning: Composite stress has breached the expanding threshold. Market regime is currently classified as {regime}. The anomaly is heavily driven by {DISPLAY[top_asset]}, accounting for {pct:.0f}% of the divergence. Monitor closely for cross-asset contagion."
+        return f"Warning: Composite stress has breached the expanding threshold. Market status is currently classified as {regime}. The anomaly is heavily driven by {DISPLAY[top_asset]}, accounting for {pct:.0f}% of the divergence. Monitor closely for cross-asset contagion."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  FIGURE + COMPONENT BUILDERS
 # ─────────────────────────────────────────────────────────────────────────────
-def build_figure(view):
+def build_figure(view, current_color=ACCENT):
     if view == "Last 6 Months":
         plot_df = DF.tail(126)
     elif view == "Last 2 Years":
@@ -303,20 +303,20 @@ def build_figure(view):
     y_top = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) * 1.15
     fig = go.Figure()
 
-    # Base subtle glow line
+    # Subtle glow line matched to regime color
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines',
-                             line=dict(color='rgba(255,255,255,0.1)', width=6, shape='spline', smoothing=0.35),
+                             line=dict(color=tint(current_color, 0.2), width=5, shape='spline', smoothing=0.35),
                              hoverinfo='skip', showlegend=False))
     
-    # Main precise line
+    # Main precise line matched to regime color
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines', name='Anomaly Score',
-                             line=dict(color='#FFFFFF', width=2, shape='spline', smoothing=0.35),
-                             fill='tozeroy', fillcolor='rgba(255,255,255,0.08)',
+                             line=dict(color=current_color, width=2, shape='spline', smoothing=0.35),
+                             fill='tozeroy', fillcolor=tint(current_color, 0.08),
                              hovertemplate='Score: <b>%{y:.2f}</b><extra></extra>'))
     
     # Threshold Line
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Threshold'], mode='lines', name='Threshold Limit',
-                             line=dict(color='rgba(255,255,255,0.25)', width=1.5, dash='dash'),
+                             line=dict(color=tint(WARN, 0.6), width=1.5, dash='dash'),
                              hovertemplate='Limit: %{y:.2f}<extra></extra>'))
 
     fp = plot_df[plot_df['Flagged'] == True]
@@ -356,25 +356,28 @@ def build_figure(view):
     return fig
 
 
-def build_contribution_chart():
+def build_contribution_chart(r_color):
     row = DF.iloc[-1]
     contribs = {DISPLAY[s]: row.get(f'{s}_Contribution', 0) for s in SIGNALS}
     contribs = dict(sorted(contribs.items(), key=lambda item: item[1]))
     
+    # Top driver gets the active status color, others get muted
+    colors = [r_color if i == len(contribs)-1 else 'rgba(255,255,255,0.12)' for i in range(len(contribs))]
+
     fig = go.Figure(go.Bar(
         x=list(contribs.values()), y=list(contribs.keys()), orientation='h',
-        marker=dict(color='#FFFFFF', opacity=0.9),
+        marker=dict(color=colors),
         text=[f"{v:.1f}%" for v in contribs.values()],
         textposition='outside',
         textfont=dict(color='#A1A1AA', family='Inter', size=11)
     ))
     
     fig.update_layout(
-        margin=dict(l=0, r=40, t=10, b=0), height=200, 
+        margin=dict(l=0, r=30, t=0, b=0), height=140, 
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', zeroline=False, 
-                   showticklabels=False, range=[0, max(contribs.values()) * 1.2]),
-        yaxis=dict(showgrid=False, tickfont=dict(color='#E4E4E7', size=12)),
+        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.04)', zeroline=False, 
+                   showticklabels=False, range=[0, max(contribs.values()) * 1.25]),
+        yaxis=dict(showgrid=False, tickfont=dict(color='#E4E4E7', size=11)),
         font=dict(family='Inter'), hovermode=False
     )
     return fig
@@ -414,6 +417,7 @@ def hero_section():
     regime, r_color = get_market_regime(score, thresh)
     gap = score - thresh
     up = gap >= 0
+    delta_class = 'delta up' if up else 'delta down'
     delta_text = f"{'▲' if up else '▼'} {abs(gap):.2f} vs Threshold"
     
     # Fake confidence score based on data completeness
@@ -430,7 +434,7 @@ def hero_section():
         html.Div(className='hero-body', children=[
             html.Div(f"{score:.2f}", className='hero-score', style={'color': r_color, 'textShadow': f'0 0 32px {tint(r_color, 0.3)}'}),
             html.Div(className='hero-metrics', children=[
-                html.Span(delta_text, className='delta', style={'color': r_color, 'backgroundColor': tint(r_color, 0.1)}),
+                html.Span(delta_text, className=delta_class, style={'color': r_color, 'backgroundColor': tint(r_color, 0.1)}),
                 html.Span(f"Last updated: {SUMMARY['updated']}", className='hero-timestamp')
             ])
         ])
@@ -785,16 +789,17 @@ def build_view(view_key):
     if view_key == "overview":
         latest = DF.iloc[-1]
         score, thresh = latest['Anomaly_Score'], latest['Threshold']
+        status_label, r_color = get_market_regime(score, thresh)
         
         row_1 = html.Div(className='glass-card', style={'marginBottom': '24px'}, **{'data-aos': 'fade-up'}, children=[
             html.Div("Systemic Stress Timeline", className='card-title'),
-            dcc.Graph(id='overview-chart', figure=build_figure("Last 6 Months"), config={'displayModeBar': False})
+            dcc.Graph(id='overview-chart', figure=build_figure("Last 6 Months", r_color), config={'displayModeBar': False})
         ])
 
         row_2 = html.Div(className='fintech-grid layout-row-2', children=[
             html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=[
                 html.Div("Drivers of Today's Score", className='card-title'),
-                dcc.Graph(figure=build_contribution_chart(), config={'displayModeBar': False})
+                dcc.Graph(figure=build_contribution_chart(r_color), config={'displayModeBar': False})
             ]),
             html.Div(className='glass-card flex-col', **{'data-aos': 'fade-up'}, children=[
                 html.Div("Market Narrative", className='card-title'),
@@ -818,7 +823,7 @@ def build_view(view_key):
                 dcc.Dropdown(id='range-dd', className='fintech-dd',
                     options=[{'label': v, 'value': v} for v in ["Last 6 Months", "Last 2 Years", "Full History (2005-Present)"]],
                     value="Last 2 Years", clearable=False),
-                dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years"), config={'displayModeBar': False}),
+                dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT), config={'displayModeBar': False}),
             ])
         ])
 
@@ -880,12 +885,14 @@ app.layout = build_layout
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  DATA CALLBACKS  (UNCHANGED)
+#  DATA CALLBACKS
 # ─────────────────────────────────────────────────────────────────────────────
 @callback(Output('anomaly-chart', 'figure'), Input('range-dd', 'value'))
 def update_chart(view):
     if not DATA_OK: return no_update
-    return build_figure(view or "Last 6 Months")
+    latest = DF.iloc[-1]
+    _, r_color = get_market_regime(latest['Anomaly_Score'], latest['Threshold'])
+    return build_figure(view or "Last 6 Months", r_color)
 
 
 @callback(Output('month-dd', 'options'), Output('month-dd', 'value'), Input('year-dd', 'value'))
