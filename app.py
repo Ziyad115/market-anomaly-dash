@@ -383,14 +383,15 @@ def build_contribution_chart(r_color):
     return fig
 
 
-def kpi_card(label, value, sub, large=False, icon_name=None):
+def kpi_card(label, value, sub, large=False, icon_name=None, value_color=None):
     classes = 'kpi-card large' if large else 'kpi-card'
+    v_style = {'color': value_color} if value_color else {}
     return html.Div(className=classes, **{'data-aos': 'fade-up'}, children=[
         html.Div(className='kpi-label-row', children=[
             html.Div(label, className='kpi-label'),
             (html.Div(icon(icon_name, 18, MUTE), className='kpi-ico') if icon_name else None),
         ]),
-        html.Div(value, className='kpi-value'),
+        html.Div(value, className='kpi-value', style=v_style),
         html.Div(sub, className='kpi-sub'),
     ])
 
@@ -398,17 +399,27 @@ def kpi_card(label, value, sub, large=False, icon_name=None):
 def fear_greed_kpi():
     fg_val_str = "N/A"
     fg_desc = "Unavailable"
+    fg_color = MUTE
     if HAS_FG:
         try:
             fg = fear_and_greed.get()
             fg_val_str = f"{fg.value:.0f}"
             fg_desc = fg.description.title()
+            
+            # Dynamic coloring based strictly on exact sentiment keywords
+            desc_low = fg.description.lower()
+            if "fear" in desc_low: 
+                fg_color = DANGER
+            elif "greed" in desc_low: 
+                fg_color = POS
+            elif "neutral" in desc_low: 
+                fg_color = MUTE
         except Exception:
             fg_desc = "Fetch Failed"
     else:
         fg_desc = "Module not installed"
         
-    return kpi_card("Fear & Greed Index", fg_val_str, fg_desc, large=True)
+    return kpi_card("Fear & Greed Index", fg_val_str, fg_desc, large=True, value_color=fg_color)
 
 
 def hero_section():
@@ -727,7 +738,7 @@ def sidebar():
                 html.Span("Anomaly", className='brand-word'),
             ]),
             html.Button(icon('lucide:panel-left', 18, ACCENT2), id='collapse-btn', n_clicks=0,
-                        className='collapse-btn', title='Collapse sidebar'),
+                        className='collapse-btn', title='Toggle sidebar'),
         ]),
         html.Div(nav, className='nav-menu'),
         html.Div(className='sidebar-foot', children=[
