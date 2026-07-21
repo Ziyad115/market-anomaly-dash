@@ -35,22 +35,25 @@ svg { display: block; }
 
 /* Sidebar & Collapse States */
 .sidebar { width: 240px; flex-shrink: 0; border-right: 1px solid var(--glass-border); background: var(--bg-surface); padding: 28px 20px; display: flex; flex-direction: column; gap: 28px; transition: width 0.3s var(--ease), padding 0.3s var(--ease); overflow: hidden; position: relative; z-index: 10; }
+.sidebar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; transition: all 0.3s var(--ease); }
 .brand-logo { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 15px; letter-spacing: -0.02em; }
 .logo-left { display: flex; align-items: center; gap: 10px; }
-.logo-mark { width: 22px; height: 22px; background: linear-gradient(135deg, var(--accent), #71717A); border-radius: 6px; }
-.sidebar-toggle { cursor: pointer; font-size: 18px; color: var(--text-secondary); transition: color 0.2s; padding: 4px; display: flex; align-items: center; justify-content: center; }
-.sidebar-toggle:hover { color: var(--text-primary); }
+.logo-img { width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0 !important; object-fit: contain; box-shadow: 0 0 0 1px var(--glass-border), 0 6px 18px rgba(0,0,0,0.5); transition: width 0.3s var(--ease), height 0.3s var(--ease), border-radius 0.3s var(--ease); }
+.brand-word { font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; font-size: 15px; white-space: nowrap; }
+.collapse-btn { background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; transition: background 0.2s var(--ease), color 0.2s var(--ease); }
+.collapse-btn:hover { background: var(--glass-hover); color: var(--text-primary); }
 .collapse-btn * { pointer-events: none; } /* Prevents SVG icon from swallowing clicks */
 
 .app-container.collapsed .sidebar { width: 78px; padding-left: 16px; padding-right: 16px; }
 .app-container.collapsed .brand-word,
 .app-container.collapsed .nav-label,
 .app-container.collapsed .live-pill { display: none; }
-.app-container.collapsed .sidebar-top { justify-content: center; }
-.app-container.collapsed .collapse-btn { display: none; }
+
+/* Keep button visible and stack cleanly under scaled-down logo */
+.app-container.collapsed .sidebar-top { flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
+.app-container.collapsed .brand-logo { justify-content: center; width: 100%; margin: 0; }
+.app-container.collapsed .logo-img { width: 40px; height: 40px; border-radius: 10px; }
 .app-container.collapsed .nav-item { justify-content: center; padding: 10px; }
-/* Force centering and width fill so logo does not disappear */
-.app-container.collapsed .brand-logo { justify-content: center; width: 100%; }
 
 /* Nav Menu */
 .nav-menu { display: flex; flex-direction: column; gap: 6px; }
@@ -58,6 +61,10 @@ svg { display: block; }
 .nav-item .ico { width: 16px; text-align: center; }
 .nav-item:hover { background: var(--glass-hover); color: var(--text-primary); }
 .nav-item.active { background: rgba(92, 107, 255, 0.12); color: var(--accent); font-weight: 600; }
+.nav-ico-wrap { display: flex; align-items: center; color: currentColor; flex-shrink: 0; }
+.nav-label { white-space: nowrap; }
+.sidebar-foot { margin-top: auto; }
+.live-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 99px; background: var(--glass-hover); border: 1px solid var(--glass-border); font-size: 10.5px; font-weight: 600; letter-spacing: 1px; color: var(--text-secondary); }
 
 /* Top Nav */
 .top-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
@@ -179,17 +186,6 @@ svg { display: block; }
 .no-aos [data-aos] { opacity: 1 !important; transform: none !important; }
 .view { width: 100%; }
 .ico-fallback { background: currentColor; opacity: 0.25; border-radius: 3px; }
-
-/* ── BRAND / LOGO ─────────────────────────────────────────── */
-.sidebar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.logo-img { width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0 !important; object-fit: contain; box-shadow: 0 0 0 1px var(--glass-border), 0 6px 18px rgba(0,0,0,0.5); }
-.brand-word { font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; font-size: 15px; white-space: nowrap; }
-.collapse-btn { background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; transition: background 0.2s var(--ease), color 0.2s var(--ease); }
-.collapse-btn:hover { background: var(--glass-hover); color: var(--text-primary); }
-.nav-ico-wrap { display: flex; align-items: center; color: currentColor; flex-shrink: 0; }
-.nav-label { white-space: nowrap; }
-.sidebar-foot { margin-top: auto; }
-.live-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 99px; background: var(--glass-hover); border: 1px solid var(--glass-border); font-size: 10.5px; font-weight: 600; letter-spacing: 1px; color: var(--text-secondary); }
 
 /* ── DATA STATUS PANEL (methodology) ──────────────────────── */
 .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 20px; }
