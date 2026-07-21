@@ -372,7 +372,6 @@ VAL = VAL_IF = None
 AVAIL_YEARS = []
 SUMMARY = {}
 DATA_OK = False
-DATA_LOADING = False
 LOAD_ERR = ""
 TRADING_DAYS = 0
 LOADED_AT = "—"
@@ -856,6 +855,9 @@ def sidebar():
         ]),
         html.Div(className='nav-container', children=[
             html.Div(nav, className='nav-menu'),
+            html.Div(className='nav-extra', children=[
+                html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
+            ]),
         ])
     ])
 
@@ -878,6 +880,7 @@ app.index_string = '''<!DOCTYPE html>
     <link href="https://unpkg.com/aos@2.3.4/dist/aos.css" rel="stylesheet">
     {%css%}
     <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+    <script>console.time('Dash-Initial-Render');</script>
 </head>
 <body>
     {%app_entry%}
@@ -893,8 +896,12 @@ app.index_string = '''<!DOCTYPE html>
                 setTimeout(function () { 
                     window.AOS.init({ duration: 600, easing: 'ease-out-cubic', once: true, offset: 40 });
                     window.AOS.refreshHard(); 
+                    console.timeEnd('Dash-Initial-Render');
                 }, 300);
-              } else { document.documentElement.classList.add('no-aos'); }
+              } else { 
+                  document.documentElement.classList.add('no-aos'); 
+                  console.timeEnd('Dash-Initial-Render');
+              }
             }
             if (document.readyState === 'complete') boot();
             else window.addEventListener('load', boot);
@@ -930,9 +937,6 @@ def serve_layout():
         sidebar(),
         html.Div(className='main-content', children=[
             html.Div(className='top-nav', children=[
-                html.Div(className='nav-extra', children=[
-                    html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
-                ]),
                 html.Div(className='status-indicator', children=[
                     html.Span(className='status-dot', style={'background': POS, 'boxShadow': f'0 0 10px {POS}'}),
                     html.Span(trans('live_data'), className='status-src')
@@ -984,7 +988,7 @@ def build_view(view_key, lang='en'):
                                  {'label': html.Span([html.Span("Full History (2005-Present)", className='lang-en'), html.Span("التاريخ الكامل (2005-الآن)", className='lang-ar')]), 'value': "Full History (2005-Present)"}],
                         value="Last 2 Years"),
                 ]),
-                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=get_empty_fig(360), config={'displayModeBar': False})]),
+                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT, lang), config={'displayModeBar': False})]),
             ])
         ])
 
@@ -1064,21 +1068,16 @@ def switch_view(n_clicks, current_class):
 
 @callback(
     Output('contrib-chart', 'figure'),
-    Output('anomaly-chart', 'figure', allow_duplicate=True),
     Input('render-interval', 'n_intervals'),
-    State('range-dd', 'value'),
     State('root-container', 'className'),
     prevent_initial_call=True
 )
-def load_deferred_charts(n, range_val, current_class):
-    if not DATA_OK: return no_update, no_update
+def load_deferred_charts(n, current_class):
+    if not DATA_OK: return no_update
     lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
     latest = DF.iloc[-1]
     _, r_color = get_market_status(latest['Anomaly_Score'], latest['Threshold'], lang)
-    
-    contrib_fig = build_contribution_chart(r_color, lang)
-    timeline_fig = build_figure(range_val or "Last 2 Years", ACCENT, lang)
-    return contrib_fig, timeline_fig
+    return build_contribution_chart(r_color, lang)
 
 @callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
 def update_timeline_chart(view, current_class):
@@ -1112,9 +1111,10 @@ def load_news(n_clicks, btn_id):
         html.A("Read Source ↗", href=link, target="_blank", className='news-link'),
     ]) for (title, link, pub) in news]
 
+# Decoupled Language Switcher. Instant updates using Plotly.relayout/restyle
 app.clientside_callback(
     """
-    function(n_clicks, tr_data, current_class, fig_over, fig_time, fig_contrib) {
+    function(n_clicks, tr_data, current_class) {
         if (!n_clicks || !document.querySelector('.app-container')) return window.dash_clientside.no_update;
         
         const new_lang = current_class.includes('lang-en') ? 'ar' : 'en';
@@ -1169,14 +1169,12 @@ app.clientside_callback(
         const dir = is_ar ? 'rtl' : 'ltr';
         const cls = 'app-container lang-' + new_lang + (is_ar ? ' font-ar' : '');
         
-        return [dir, cls, fig_over, fig_time, fig_contrib];
+        return [dir, cls];
     }
     """,
     Output('root-container', 'dir'), Output('root-container', 'className'),
-    Output('overview-chart', 'figure'), Output('anomaly-chart', 'figure'), Output('contrib-chart', 'figure'),
     Input('lang-toggle', 'n_clicks'),
     State('tr-store', 'data'), State('root-container', 'className'),
-    State('overview-chart', 'figure'), State('anomaly-chart', 'figure'), State('contrib-chart', 'figure'),
     prevent_initial_call=True
 )
 
