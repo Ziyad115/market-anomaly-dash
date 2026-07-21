@@ -153,9 +153,11 @@ TR = {
 }
 
 def t(key, lang='en'):
+    """Safe translation dictionary lookup."""
     return TR.get(lang, TR['en']).get(key, key)
 
 def trans(key):
+    """Returns a dual-language span component that switches instantly via CSS class."""
     return html.Span([
         html.Span(t(key, 'en'), className='lang-en'),
         html.Span(t(key, 'ar'), className='lang-ar')
@@ -502,6 +504,9 @@ def dual_market_narrative(row):
         html.Span(generate('ar'), className='lang-ar')
     ])
 
+def get_empty_fig(height=140):
+    return go.Figure(layout=dict(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=height, xaxis=dict(visible=False), yaxis=dict(visible=False)))
+
 def build_figure(view, current_color, lang='en'):
     if view == "Last 6 Months" or view == t('ranges', lang).get("Last 6 Months"):
         plot_df = DF.tail(126)
@@ -844,17 +849,13 @@ def sidebar():
         html.Div(className='sidebar-top', children=[
             html.Div(className='brand-logo', children=[
                 html.Div(className='logo-left', children=[
-                    html.Img(src=app.get_asset_url('Anomaly_logo.png'), className='logo-img', alt='Anomaly'),
-                    html.Span("Anomaly", className='brand-word'),
+                    html.Img(src=app.get_asset_url('Anomaly_logo_wordmark.png'), className='logo-wordmark', alt='Anomaly'),
                 ]),
                 html.Button(icon('lucide:panel-left', 18, ACCENT2), id='collapse-btn', n_clicks=0, className='collapse-btn'),
             ])
         ]),
         html.Div(className='nav-container', children=[
             html.Div(nav, className='nav-menu'),
-            html.Div(className='nav-extra', children=[
-                html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
-            ]),
         ])
     ])
 
@@ -877,7 +878,6 @@ app.index_string = '''<!DOCTYPE html>
     <link href="https://unpkg.com/aos@2.3.4/dist/aos.css" rel="stylesheet">
     {%css%}
     <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
-    <script>console.time('Dash-Initial-Render');</script>
 </head>
 <body>
     {%app_entry%}
@@ -893,12 +893,8 @@ app.index_string = '''<!DOCTYPE html>
                 setTimeout(function () { 
                     window.AOS.init({ duration: 600, easing: 'ease-out-cubic', once: true, offset: 40 });
                     window.AOS.refreshHard(); 
-                    console.timeEnd('Dash-Initial-Render');
                 }, 300);
-              } else { 
-                  document.documentElement.classList.add('no-aos'); 
-                  console.timeEnd('Dash-Initial-Render');
-              }
+              } else { document.documentElement.classList.add('no-aos'); }
             }
             if (document.readyState === 'complete') boot();
             else window.addEventListener('load', boot);
@@ -928,11 +924,15 @@ def serve_layout():
     overview_html = build_view("overview")
 
     return html.Div(id='root-container', className='app-container lang-en', dir='ltr', children=[
+        dcc.Interval(id='render-interval', interval=200, max_intervals=1),
         dcc.Store(id='tr-store', data=TR),
         dcc.Store(id='nav-dummy'), dcc.Store(id='collapse-dummy'),
         sidebar(),
         html.Div(className='main-content', children=[
             html.Div(className='top-nav', children=[
+                html.Div(className='nav-extra', children=[
+                    html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
+                ]),
                 html.Div(className='status-indicator', children=[
                     html.Span(className='status-dot', style={'background': POS, 'boxShadow': f'0 0 10px {POS}'}),
                     html.Span(trans('live_data'), className='status-src')
@@ -950,13 +950,13 @@ def build_view(view_key, lang='en'):
         
         row_1 = html.Div(className='glass-card', style={'marginBottom': '24px'}, **{'data-aos': 'fade-up'}, children=[
             html.Div(trans('sys_stress'), className='card-title'),
-            html.Div(dir='ltr', children=[dcc.Graph(id='overview-chart', figure=build_figure("Last 6 Months", r_color, lang), config={'displayModeBar': False})])
+            html.Div(dir='ltr', children=[dcc.Graph(id='overview-chart', figure=build_figure("Last 6 Months", r_color, 'en'), config={'displayModeBar': False})])
         ])
 
         row_2 = html.Div(className='fintech-grid layout-row-2', children=[
             html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('drivers_today'), className='card-title'),
-                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=build_contribution_chart(r_color, lang), config={'displayModeBar': False})])
+                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=get_empty_fig(), config={'displayModeBar': False})])
             ]),
             html.Div(className='glass-card flex-col', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('market_narrative'), className='card-title'),
@@ -984,7 +984,7 @@ def build_view(view_key, lang='en'):
                                  {'label': html.Span([html.Span("Full History (2005-Present)", className='lang-en'), html.Span("التاريخ الكامل (2005-الآن)", className='lang-ar')]), 'value': "Full History (2005-Present)"}],
                         value="Last 2 Years"),
                 ]),
-                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT, lang), config={'displayModeBar': False})]),
+                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=get_empty_fig(360), config={'displayModeBar': False})]),
             ])
         ])
 
@@ -1062,7 +1062,25 @@ def switch_view(n_clicks, current_class):
     
     return view_html, nav_classes
 
-@callback(Output('anomaly-chart', 'figure'), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
+@callback(
+    Output('contrib-chart', 'figure'),
+    Output('anomaly-chart', 'figure', allow_duplicate=True),
+    Input('render-interval', 'n_intervals'),
+    State('range-dd', 'value'),
+    State('root-container', 'className'),
+    prevent_initial_call=True
+)
+def load_deferred_charts(n, range_val, current_class):
+    if not DATA_OK: return no_update, no_update
+    lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
+    latest = DF.iloc[-1]
+    _, r_color = get_market_status(latest['Anomaly_Score'], latest['Threshold'], lang)
+    
+    contrib_fig = build_contribution_chart(r_color, lang)
+    timeline_fig = build_figure(range_val or "Last 2 Years", ACCENT, lang)
+    return contrib_fig, timeline_fig
+
+@callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
 def update_timeline_chart(view, current_class):
     if not DATA_OK: return no_update
     lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
@@ -1096,10 +1114,9 @@ def load_news(n_clicks, btn_id):
 
 app.clientside_callback(
     """
-    function(n_clicks, tr_data, current_class) {
+    function(n_clicks, tr_data, current_class, fig_over, fig_time, fig_contrib) {
         if (!n_clicks || !document.querySelector('.app-container')) return window.dash_clientside.no_update;
         
-        console.time('plotly-lang-render');
         const new_lang = current_class.includes('lang-en') ? 'ar' : 'en';
         const is_ar = new_lang === 'ar';
         const TR = tr_data[new_lang];
@@ -1147,18 +1164,19 @@ app.clientside_callback(
                     Plotly.restyle(plot, {y: [newY]}, [0]);
                 }
             });
-            console.timeEnd('plotly-lang-render');
         }, 50);
         
         const dir = is_ar ? 'rtl' : 'ltr';
         const cls = 'app-container lang-' + new_lang + (is_ar ? ' font-ar' : '');
         
-        return [dir, cls];
+        return [dir, cls, fig_over, fig_time, fig_contrib];
     }
     """,
     Output('root-container', 'dir'), Output('root-container', 'className'),
+    Output('overview-chart', 'figure'), Output('anomaly-chart', 'figure'), Output('contrib-chart', 'figure'),
     Input('lang-toggle', 'n_clicks'),
     State('tr-store', 'data'), State('root-container', 'className'),
+    State('overview-chart', 'figure'), State('anomaly-chart', 'figure'), State('contrib-chart', 'figure'),
     prevent_initial_call=True
 )
 
