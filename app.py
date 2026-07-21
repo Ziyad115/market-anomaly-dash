@@ -3,6 +3,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import json
 import threading
+import concurrent.futures
 import traceback
 import pickle
 import tempfile
@@ -73,7 +74,7 @@ TR = {
         'date': 'Date', 'hist_event': 'Historical Event', 'composite': 'Composite', 'nearest': 'Nearest',
         'peak_score': 'Peak Score', 'detected': 'Detected', 'missed': 'Missed', 'top_driver': 'Top Driver',
         'rarity': 'Rarity (p)', 'when': 'When', 'view_news': 'View news from', 'load_headlines': 'Load headlines',
-        'showing_recent': 'Showing most recent 60 matches.', 'no_anomaly': 'No anomaly days match this filter.',
+        'showing_recent': 'Showing most recent 20 matches.', 'no_anomaly': 'No anomaly days match this filter.',
         'all_years': 'All Years', 'all_months': 'All Months', 'status_normal': 'Normal', 'status_elevated': 'Elevated',
         'status_stress': 'Stress', 'status_crisis': 'Crisis',
         'alert_moderate': 'Moderate', 'alert_severe': 'Severe',
@@ -120,7 +121,7 @@ TR = {
         'date': 'التاريخ', 'hist_event': 'الحدث التاريخي', 'composite': 'النموذج المركب', 'nearest': 'أقرب تنبيه',
         'peak_score': 'أعلى درجة', 'detected': 'مرصود', 'missed': 'غير مرصود', 'top_driver': 'المحرك الأكبر',
         'rarity': 'الندرة الإحصائية (p)', 'when': 'المدة', 'view_news': 'عرض الأخبار ليوم', 'load_headlines': 'تحميل العناوين',
-        'showing_recent': 'عرض أحدث 60 نتيجة.', 'no_anomaly': 'لا توجد تنبيهات مطابقة.',
+        'showing_recent': 'عرض أحدث 20 نتيجة.', 'no_anomaly': 'لا توجد تنبيهات مطابقة.',
         'all_years': 'كل السنوات', 'all_months': 'كل الأشهر', 'status_normal': 'طبيعي', 'status_elevated': 'مرتفع',
         'status_stress': 'ضغط', 'status_crisis': 'أزمة',
         'alert_moderate': 'متوسط', 'alert_severe': 'شديد',
@@ -152,11 +153,9 @@ TR = {
 }
 
 def t(key, lang='en'):
-    """Safe translation dictionary lookup."""
     return TR.get(lang, TR['en']).get(key, key)
 
 def trans(key):
-    """Returns a dual-language span component that switches instantly via CSS class."""
     return html.Span([
         html.Span(t(key, 'en'), className='lang-en'),
         html.Span(t(key, 'ar'), className='lang-ar')
@@ -193,6 +192,24 @@ def tint(hex_color, alpha):
 # ─────────────────────────────────────────────────────────────────────────────
 #  DATA LOGIC & ASYNC FETCHING
 # ─────────────────────────────────────────────────────────────────────────────
+def fetch_single_ticker(name, t_sym):
+    close = None
+    for attempt in range(4):
+        try:
+            d = yf.download(t_sym, start='2005-01-01', progress=False)
+            c = d['Close']
+            if isinstance(c, pd.DataFrame): c = c.iloc[:, 0]
+            if len(c) > 0:
+                c.index = pd.to_datetime(c.index)
+                if c.index.tz is not None:
+                    c.index = c.index.tz_localize(None)
+                close = c
+                break
+        except Exception:
+            pass
+        time.sleep((0.5 * (2 ** attempt)) + random.uniform(0, 0.5))
+        
+    return name, close if close is not None else pd.Series(dtype=float), "yfinance"
 
 def fetch_fg():
     if HAS_FG:
@@ -213,75 +230,57 @@ def load_data():
             with open(RAW_CACHE_FILE, 'rb') as f:
                 cache = pickle.load(f)
         except Exception:
-            cache = {}
+            pass
 
     data = {}
     sources_used = {}
     log_msgs = []
     now = datetime.now()
 
-    # Fire off F&G independently in background
+    # Fire off F&G independently
     threading.Thread(target=fetch_fg, daemon=True).start()
 
-    for name, t_sym in tickers.items():
-        series = None
-        src_name = "none"
-        
-        # 1. Check fresh cache (24h TTL)
-        cached_item = cache.get(name)
-        if cached_item and (now - cached_item['timestamp']) < timedelta(hours=24):
-            series = cached_item['data']
-            src_name = "cache (fresh)"
-        
-        # 2. Try yfinance sequentially with backoff + jitter
-        if series is None:
-            for attempt in range(4):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(fetch_single_ticker, name, sym): name for name, sym in tickers.items()}
+        for future in concurrent.futures.as_completed(futures):
+            name, series, src_name = future.result()
+            
+            # Check cache if yfinance failed
+            if series.empty:
+                cached_item = cache.get(name)
+                if cached_item and (now - cached_item['timestamp']) < timedelta(hours=24):
+                    series = cached_item['data']
+                    src_name = "cache (fresh)"
+                    
+            # Try FRED if still empty
+            if series.empty and name in fred_map:
                 try:
-                    d = yf.download(t_sym, start='2005-01-01', progress=False)
-                    c = d['Close']
-                    if isinstance(c, pd.DataFrame): c = c.iloc[:, 0]
-                    if len(c) > 0:
-                        c.index = pd.to_datetime(c.index)
-                        if c.index.tz is not None:
-                            c.index = c.index.tz_localize(None)
-                        series = c
-                        src_name = "yfinance"
-                        break
+                    fred_id = fred_map[name]
+                    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={fred_id}"
+                    df_fred = pd.read_csv(url, na_values='.', parse_dates=['DATE'], index_col='DATE')
+                    df_fred.index = pd.to_datetime(df_fred.index)
+                    if df_fred.index.tz is not None: df_fred.index = df_fred.index.tz_localize(None)
+                    df_fred = df_fred.dropna()
+                    df_fred = df_fred[df_fred.index >= '2005-01-01']
+                    if not df_fred.empty:
+                        series = df_fred[fred_id]
+                        src_name = f"fred:{fred_id}"
                 except Exception:
                     pass
-                time.sleep((0.5 * (2 ** attempt)) + random.uniform(0, 0.5))
 
-        # 3. Try FRED fallback
-        if series is None and name in fred_map:
-            try:
-                fred_id = fred_map[name]
-                url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={fred_id}"
-                df_fred = pd.read_csv(url, na_values='.', parse_dates=['DATE'], index_col='DATE')
-                df_fred.index = pd.to_datetime(df_fred.index)
-                if df_fred.index.tz is not None:
-                    df_fred.index = df_fred.index.tz_localize(None)
-                df_fred = df_fred.dropna()
-                df_fred = df_fred[df_fred.index >= '2005-01-01']
-                if len(df_fred) > 0:
-                    series = df_fred[fred_id]
-                    src_name = f"fred:{fred_id}"
-            except Exception:
-                pass
+            # Final fallback to stale cache
+            if series.empty and name in cache:
+                series = cache[name]['data']
+                src_name = "cache (stale)"
 
-        # 4. Fallback to expired cache
-        if series is None and cached_item:
-            series = cached_item['data']
-            src_name = "cache (stale)"
+            if not series.empty:
+                data[name] = series
+                cache[name] = {'data': series, 'timestamp': now if "cache" not in src_name else cache[name]['timestamp']}
+                sources_used[name] = src_name
+                log_msgs.append(f"{name}: {src_name} ({len(series)})")
+            else:
+                log_msgs.append(f"{name}: FAILED")
 
-        if series is not None:
-            data[name] = series
-            cache[name] = {'data': series, 'timestamp': now if "cache" not in src_name else cached_item['timestamp']}
-            sources_used[name] = src_name
-            log_msgs.append(f"{name}: {src_name} (rows={len(series)})")
-        else:
-            log_msgs.append(f"{name}: FAILED TO LOAD")
-
-    # Save cache
     try:
         with open(RAW_CACHE_FILE, 'wb') as f:
             pickle.dump(cache, f)
@@ -289,16 +288,11 @@ def load_data():
         pass
 
     print("[DATA LOAD] " + " | ".join(log_msgs))
-    
     unique_sources = set(sources_used.values())
     DATA_SOURCE = ", ".join(unique_sources) if unique_sources else "unknown"
 
-    if not data:
-        return pd.DataFrame()
-        
-    df = pd.DataFrame(data)
-    df = df.ffill().dropna()
-    return df
+    if not data: return pd.DataFrame()
+    return pd.DataFrame(data).ffill().dropna()
 
 def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
     df = prices.copy()
@@ -512,16 +506,13 @@ def dual_market_narrative(row):
         html.Span(generate('ar'), className='lang-ar')
     ])
 
-def get_empty_fig(height=140):
-    return go.Figure(layout=dict(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=height, xaxis=dict(visible=False), yaxis=dict(visible=False)))
-
 def build_figure(view, current_color, lang='en'):
     if view == "Last 6 Months" or view == t('ranges', lang).get("Last 6 Months"):
         plot_df = DF.tail(126)
     elif view == "Last 2 Years" or view == t('ranges', lang).get("Last 2 Years"):
         plot_df = DF.tail(504).resample("W").last()
     else:
-        plot_df = DF.resample("ME").last()
+        plot_df = DF.resample("ME").last() # Aggressively downsample full history
 
     y_top = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) * 1.15
     fig = go.Figure()
@@ -532,7 +523,7 @@ def build_figure(view, current_color, lang='en'):
     
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines', name=t('chart_score', lang),
                              line=dict(color=current_color, width=2, shape='spline', smoothing=0.35),
-                             fill='tozeroy', fillcolor='rgba(255,255,255,0.08)',
+                             fill='tozeroy', fillcolor=tint(current_color, 0.08),
                              hovertemplate='Score: <b>%{y:.2f}</b><extra></extra>'))
     
     fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Threshold'], mode='lines', name=t('chart_limit', lang),
@@ -546,7 +537,9 @@ def build_figure(view, current_color, lang='en'):
 
     for i, (date_str, label_key) in enumerate(sorted(HISTORICAL_EVENTS.items())):
         dt = pd.to_datetime(date_str)
-        if dt >= plot_df.index.min() and dt <= plot_df.index.max():
+        if dt.tz is not None: dt = dt.tz_localize(None)
+        
+        if not plot_df.empty and dt >= plot_df.index.min() and dt <= plot_df.index.max():
             label = t(label_key, lang)
             y_offset = -(i % 3) * 16 
             fig.add_vline(x=dt, line_width=1, line_dash="dash", line_color="rgba(255,255,255,0.15)",
@@ -719,9 +712,7 @@ def alert_card(date_idx, row):
     details_children.append(
         html.Button(trans('load_headlines'), id={'type': 'news-btn', 'index': date_str},
                     n_clicks=0, className='news-load-btn'))
-    details_children.append(
-        dcc.Loading(type='circle', color=ACCENT,
-                    children=html.Div(id={'type': 'news-out', 'index': date_str})))
+    details_children.append(html.Div(id={'type': 'news-out', 'index': date_str}))
 
     return html.Div(className='alert glass-card', **{'data-aos': 'fade-up'}, children=[
         html.Div(className='alert-rail', style={'background': sev}),
@@ -749,8 +740,8 @@ def build_cards(year, month):
         flags = flags[flags.index.month == m_idx]
 
     note = None
-    if len(flags) > 60:
-        flags = flags.head(60)
+    if len(flags) > 20: # Drastically reduced from 60 to prevent DOM lockup
+        flags = flags.head(20)
         note = html.Div(trans('showing_recent'), className='context-box')
     if len(flags) == 0:
         return [html.Div(trans('no_anomaly'), className='context-box')]
@@ -888,6 +879,7 @@ app.index_string = '''<!DOCTYPE html>
     <link href="https://unpkg.com/aos@2.3.4/dist/aos.css" rel="stylesheet">
     {%css%}
     <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+    <script>console.time('Dash-Initial-Render');</script>
 </head>
 <body>
     {%app_entry%}
@@ -900,9 +892,15 @@ app.index_string = '''<!DOCTYPE html>
           (function () {
             function boot() {
               if (window.AOS) {
-                window.AOS.init({ duration: 600, easing: 'ease-out-cubic', once: true, offset: 40 });
-                setTimeout(function () { window.AOS.refreshHard(); }, 300);
-              } else { document.documentElement.classList.add('no-aos'); }
+                setTimeout(function () { 
+                    window.AOS.init({ duration: 600, easing: 'ease-out-cubic', once: true, offset: 40 });
+                    window.AOS.refreshHard(); 
+                    console.timeEnd('Dash-Initial-Render');
+                }, 300);
+              } else { 
+                  document.documentElement.classList.add('no-aos'); 
+                  console.timeEnd('Dash-Initial-Render');
+              }
             }
             if (document.readyState === 'complete') boot();
             else window.addEventListener('load', boot);
@@ -929,12 +927,10 @@ def serve_layout():
     if not DATA_OK:
         return html.Div(className='error-screen', children=[html.H1("Service Unavailable"), html.P("Market data failed to load. See server logs for details."), html.Code(LOAD_ERR)])
 
-    view_nodes = []
-    for key in VIEWS:
-        view_nodes.append(html.Div(build_view(key), className='view', **{'data-view': key}, style={'display': 'block' if key == 'overview' else 'none'}))
+    # Pre-render ONLY overview to slash initial load time
+    overview_html = build_view("overview")
 
     return html.Div(id='root-container', className='app-container lang-en', dir='ltr', children=[
-        dcc.Interval(id='render-interval', interval=200, max_intervals=1),
         dcc.Store(id='tr-store', data=TR),
         dcc.Store(id='nav-dummy'), dcc.Store(id='collapse-dummy'),
         sidebar(),
@@ -945,11 +941,11 @@ def serve_layout():
                     html.Span(trans('live_data'), className='status-src')
                 ])
             ]),
-            html.Div(view_nodes, id='views-wrap'),
+            html.Div(overview_html, id='views-wrap'),
         ]),
     ])
 
-def build_view(view_key):
+def build_view(view_key, lang='en'):
     if view_key == "overview":
         latest = DF.iloc[-1]
         score, thresh = latest['Anomaly_Score'], latest['Threshold']
@@ -957,13 +953,13 @@ def build_view(view_key):
         
         row_1 = html.Div(className='glass-card', style={'marginBottom': '24px'}, **{'data-aos': 'fade-up'}, children=[
             html.Div(trans('sys_stress'), className='card-title'),
-            html.Div(dir='ltr', children=[dcc.Graph(id='overview-chart', figure=build_figure("Last 6 Months", r_color, 'en'), config={'displayModeBar': False})])
+            html.Div(dir='ltr', children=[dcc.Graph(id='overview-chart', figure=build_figure("Last 6 Months", r_color, lang), config={'displayModeBar': False})])
         ])
 
         row_2 = html.Div(className='fintech-grid layout-row-2', children=[
             html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('drivers_today'), className='card-title'),
-                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=get_empty_fig(), config={'displayModeBar': False})])
+                html.Div(dir='ltr', children=[dcc.Graph(id='contrib-chart', figure=build_contribution_chart(r_color, lang), config={'displayModeBar': False})])
             ]),
             html.Div(className='glass-card flex-col', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('market_narrative'), className='card-title'),
@@ -991,7 +987,7 @@ def build_view(view_key):
                                  {'label': html.Span([html.Span("Full History (2005-Present)", className='lang-en'), html.Span("التاريخ الكامل (2005-الآن)", className='lang-ar')]), 'value': "Full History (2005-Present)"}],
                         value="Last 2 Years"),
                 ]),
-                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=get_empty_fig(360), config={'displayModeBar': False})]),
+                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT, lang), config={'displayModeBar': False})]),
             ])
         ])
 
@@ -1049,25 +1045,30 @@ app.clientside_callback(
     Output('boot-interval', 'disabled'), Input('boot-trigger', 'children'), prevent_initial_call=True
 )
 
+# TRUE Lazy-Loading Server Callback. Replaces CSS "display: none" switcher.
 @callback(
-    Output('contrib-chart', 'figure'),
-    Output('anomaly-chart', 'figure', allow_duplicate=True),
-    Input('render-interval', 'n_intervals'),
-    State('range-dd', 'value'),
+    Output('views-wrap', 'children'),
+    Output({'type': 'nav', 'index': ALL}, 'className'),
+    Input({'type': 'nav', 'index': ALL}, 'n_clicks'),
     State('root-container', 'className'),
     prevent_initial_call=True
 )
-def load_deferred_charts(n, range_val, current_class):
-    if not DATA_OK: return no_update, no_update
+def switch_view(n_clicks, current_class):
+    if not any(c for c in n_clicks if c is not None):
+        return no_update, no_update
+        
+    view_key = 'overview'
+    if ctx.triggered_id:
+        view_key = ctx.triggered_id['index']
+        
     lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
-    latest = DF.iloc[-1]
-    _, r_color = get_market_status(latest['Anomaly_Score'], latest['Threshold'], lang)
+    view_html = build_view(view_key, lang)
+    nav_classes = ['nav-item active' if key == view_key else 'nav-item' for key in VIEWS]
     
-    contrib_fig = build_contribution_chart(r_color, lang)
-    timeline_fig = build_figure(range_val or "Last 2 Years", ACCENT, lang)
-    return contrib_fig, timeline_fig
+    return view_html, nav_classes
 
-@callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
+# Timeline dropdown update
+@callback(Output('anomaly-chart', 'figure'), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
 def update_timeline_chart(view, current_class):
     if not DATA_OK: return no_update
     lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
@@ -1105,25 +1106,22 @@ app.clientside_callback(
     function(n_clicks, tr_data, current_class, fig_over, fig_time, fig_contrib) {
         if (!n_clicks || !document.querySelector('.app-container')) return window.dash_clientside.no_update;
         
-        console.time('plotly-lang-render');
+        console.time('lang-switch-render');
         const new_lang = current_class.includes('lang-en') ? 'ar' : 'en';
         const is_ar = new_lang === 'ar';
         const TR = tr_data[new_lang];
         
-        let f1 = fig_over ? JSON.parse(JSON.stringify(fig_over)) : null;
-        let f2 = fig_time ? JSON.parse(JSON.stringify(fig_time)) : null;
-        let f3 = fig_contrib ? JSON.parse(JSON.stringify(fig_contrib)) : null;
-        
-        function trans_fig(fig) {
-            if(!fig) return;
-            const font = is_ar ? 'ThmanyahSans, sans-serif' : 'Inter, sans-serif';
-            if (fig.layout) {
-                fig.layout.font.family = font;
-                if(fig.layout.hoverlabel && fig.layout.hoverlabel.font) fig.layout.hoverlabel.font.family = font;
+        // CSS handles pure text. JS safely targets Plotly via generic class query.
+        setTimeout(() => {
+            const plots = document.querySelectorAll('.js-plotly-plot');
+            plots.forEach(plot => {
+                const font = is_ar ? 'ThmanyahSans, sans-serif' : 'Inter, sans-serif';
+                let layoutUpdate = { 'font.family': font, 'hoverlabel.font.family': font };
                 
-                if (fig.layout.annotations) {
+                if (plot.layout && plot.layout.annotations) {
+                    let newAnnotations = [...plot.layout.annotations];
                     const evt_keys = ['evt_lehman', 'evt_flash_crash', 'evt_downgrade', 'evt_china', 'evt_covid', 'evt_circuit', 'evt_bear', 'evt_ukraine', 'evt_svb'];
-                    fig.layout.annotations.forEach(a => {
+                    newAnnotations.forEach(a => {
                         for(let k of evt_keys) {
                             if(a.text === tr_data['en'][k] || a.text === tr_data['ar'][k]) {
                                 a.text = tr_data[new_lang][k];
@@ -1131,66 +1129,45 @@ app.clientside_callback(
                             }
                         }
                     });
+                    layoutUpdate['annotations'] = newAnnotations;
                 }
-            }
-            if (fig.data && fig.data.length >= 3) {
-                fig.data[1].name = TR['chart_score'];
-                fig.data[2].name = TR['chart_limit'];
-                if(fig.data.length > 3) fig.data[3].name = TR['anomaly'];
-            }
-        }
-        
-        function trans_contrib(fig) {
-            if(!fig || !fig.y) return;
-            const font = is_ar ? 'ThmanyahSans, sans-serif' : 'Inter, sans-serif';
-            if(fig.layout) fig.layout.font.family = font;
-            fig.y = fig.y.map(asset => {
-                for(let k in tr_data['en']['assets']) {
-                    if(asset === tr_data['en']['assets'][k] || asset === tr_data['ar']['assets'][k]) {
-                        return tr_data[new_lang]['assets'][k];
+                Plotly.relayout(plot, layoutUpdate);
+                
+                if (plot.data && plot.data.length >= 2) {
+                    let dataUpdate = { name: [TR['chart_score'], TR['chart_limit']] };
+                    let traceIndices = [1, 2];
+                    if (plot.data.length >= 4) {
+                        dataUpdate.name.push(TR['anomaly']);
+                        traceIndices.push(3);
                     }
+                    Plotly.restyle(plot, dataUpdate, traceIndices);
                 }
-                return asset;
+                
+                if (plot.data && plot.data[0] && plot.data[0].type === 'bar') {
+                    let newY = plot.data[0].y.map(asset => {
+                        for(let k in tr_data['en']['assets']) {
+                            if(asset === tr_data['en']['assets'][k] || asset === tr_data['ar']['assets'][k]) {
+                                return tr_data[new_lang]['assets'][k];
+                            }
+                        }
+                        return asset;
+                    });
+                    Plotly.restyle(plot, {y: [newY]}, [0]);
+                }
             });
-        }
-        
-        trans_fig(f1); trans_fig(f2); trans_contrib(f3);
+            console.timeEnd('lang-switch-render');
+        }, 50);
         
         const dir = is_ar ? 'rtl' : 'ltr';
         const cls = 'app-container lang-' + new_lang + (is_ar ? ' font-ar' : '');
-        
-        console.timeEnd('plotly-lang-render');
-        return [dir, cls, f1, f2, f3];
+        return [dir, cls];
     }
     """,
     Output('root-container', 'dir'), Output('root-container', 'className'),
-    Output('overview-chart', 'figure'), Output('anomaly-chart', 'figure'), Output('contrib-chart', 'figure'),
     Input('lang-toggle', 'n_clicks'),
     State('tr-store', 'data'), State('root-container', 'className'),
     State('overview-chart', 'figure'), State('anomaly-chart', 'figure'), State('contrib-chart', 'figure'),
     prevent_initial_call=True
-)
-
-# View Switching
-app.clientside_callback(
-    """
-    function(clicks) {
-        if (!clicks || clicks.every(function(c) { return !c; })) return window.dash_clientside.no_update;
-        var cbctx = window.dash_clientside.callback_context;
-        var key = 'overview';
-        if (cbctx && cbctx.triggered && cbctx.triggered.length && cbctx.triggered[0].value) {
-            try { key = JSON.parse(cbctx.triggered[0].prop_id.split('.n_clicks')[0]).index; } catch (e) {}
-        }
-        document.querySelectorAll('[data-view]').forEach(function (v) { v.style.display = (v.getAttribute('data-view') === key) ? 'block' : 'none'; });
-        document.querySelectorAll('[data-nav]').forEach(function (n) {
-            if (n.getAttribute('data-nav') === key) { n.classList.add('active'); } else { n.classList.remove('active'); }
-        });
-        window.dispatchEvent(new Event('resize'));
-        if (window.AOS) { window.AOS.refreshHard(); }
-        return '';
-    }
-    """,
-    Output('nav-dummy', 'data'), Input({'type': 'nav', 'index': ALL}, 'n_clicks')
 )
 
 # Sidebar Collapse
