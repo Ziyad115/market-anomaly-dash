@@ -1076,7 +1076,6 @@ def build_view(view_key, lang='en'):
             ])
         ])
 
-        # Safely render each KPI independently
         try:
             fg_kpi_card = fear_greed_kpi()
         except Exception as e:
@@ -1198,19 +1197,6 @@ def switch_view(n_clicks, current_class):
     
     return view_html, nav_classes
 
-@callback(
-    Output('contrib-chart', 'figure'),
-    Input('render-interval', 'n_intervals'),
-    State('root-container', 'className'),
-    prevent_initial_call=True
-)
-def load_deferred_charts(n, current_class):
-    if not DATA_OK: return no_update
-    lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
-    latest = DF.iloc[-1]
-    _, r_color = get_market_status(latest['Anomaly_Score'], latest['Threshold'], lang)
-    return build_contribution_chart(r_color, lang)
-
 @callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
 def update_timeline_chart(view, current_class):
     if not DATA_OK: return no_update
@@ -1243,7 +1229,6 @@ def load_news(n_clicks, btn_id):
         html.A("Read Source ↗", href=link, target="_blank", className='news-link'),
     ]) for (title, link, pub) in news]
 
-# Decoupled Language Switcher. Instant updates using Plotly.relayout/restyle
 app.clientside_callback(
     """
     function(n_clicks, tr_data, current_class) {
