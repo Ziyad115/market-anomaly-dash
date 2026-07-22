@@ -64,7 +64,18 @@ svg { display: block; }
 .main-content { flex: 1; min-width: 0; padding: 24px 36px 60px; max-width: 1400px; margin: 0 auto; transition: padding 0.3s var(--ease); }
 
 /* Sidebar */
-.sidebar { width: 240px; flex-shrink: 0; border-inline-end: 1px solid var(--glass-border); background: var(--bg-surface); padding: 28px 20px; display: flex; flex-direction: column; gap: 28px; transition: width 0.3s var(--ease), padding 0.3s var(--ease); overflow: hidden; position: relative; z-index: 10; white-space: nowrap; }
+.sidebar { 
+    width: 240px; 
+    flex-shrink: 0; 
+    border-right: 1px solid var(--glass-border); 
+    background: var(--bg-surface); 
+    padding: 28px 20px; 
+    display: flex; 
+    flex-direction: column; 
+    gap: 28px; 
+    position: relative; 
+    z-index: 10; 
+}
 
 .sidebar-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; transition: all 0.3s var(--ease); width: 100%; }
 .brand-logo { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 15px; letter-spacing: -0.02em; width: 100%; transition: all 0.3s var(--ease); }
@@ -87,14 +98,19 @@ svg { display: block; }
 .nav-item.active { background: rgba(92, 107, 255, 0.12); color: var(--accent); font-weight: 600; }
 .nav-ico-wrap { display: flex; align-items: center; color: currentColor; flex-shrink: 0; }
 
-.sidebar-foot { margin-top: auto; display: flex; justify-content: center; width: 100%; }
+.sidebar-foot { 
+    margin-top: auto; 
+    width: 100%; 
+}
+
 .made-by-credit {
     font-size: 10.5px;
     color: var(--text-tertiary);
     text-align: center;
     padding: 8px 0;
-    white-space: nowrap;
     letter-spacing: 0.02em;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 /* Accented Language Toggle Button */
@@ -160,7 +176,7 @@ svg { display: block; }
 .delta { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 500; }
 .hero-timestamp { font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono); }
 
-/* Grid Layouts (Tightened) */
+/* Grid Layouts */
 .fintech-grid { display: grid; gap: 16px; margin-bottom: 16px; position: relative; z-index: 1; }
 .layout-row-2 { grid-template-columns: 1fr 1fr; }
 .kpi-row { grid-template-columns: 1.5fr 1fr 1fr 1fr; }
@@ -275,18 +291,42 @@ svg { display: block; }
 }
 @media (max-width: 768px) {
     .app-container { flex-direction: column; }
-    .app-container.collapsed .sidebar, .sidebar { width: 100%; border-inline-end: none; border-bottom: 1px solid var(--glass-border); padding: 16px; flex-direction: row; align-items: center; justify-content: space-between; height: auto; }
-    .nav-menu {
-        flex-direction: row;
-        overflow-x: auto;
-        gap: 4px;
-        flex-wrap: wrap;
-        justify-content: center;
+    
+    .sidebar, 
+    .app-container.collapsed .sidebar { 
+        width: 100%; 
+        border-right: none; 
+        border-bottom: 1px solid var(--glass-border); 
+        padding: 16px; 
+        display: flex; 
+        flex-direction: column; 
+        align-items: stretch; 
+        justify-content: flex-start; 
+        gap: 12px; 
+        height: auto; 
     }
+    
+    .sidebar-top { display: flex; align-items: center; justify-content: center; }
+    .brand-logo { justify-content: center; width: 100%; }
+    .nav-container { width: 100%; }
+    
+    .nav-menu { 
+        display: flex; 
+        flex-direction: row; 
+        flex-wrap: wrap; 
+        justify-content: center; 
+        gap: 8px; 
+        overflow: visible; 
+    }
+    
     .nav-item { padding: 8px 12px; }
     .nav-label { display: block; }
+    
+    .sidebar-foot { display: block; width: 100%; margin-top: 4px; }
+    .made-by-credit { text-align: center; white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
+    
     .sidebar-toggle, .collapse-btn { display: none; }
-    .sidebar-foot { display: block; }
+    
     .main-content { padding: 20px 16px; }
     .hero-score { font-size: 48px; }
     .kpi-row { grid-template-columns: 1fr; }
@@ -298,6 +338,12 @@ svg { display: block; }
 }
 
 @media (max-width: 480px) {
-    .nav-item { padding: 6px 8px; font-size: 12px; }
+    .made-by-credit {
+        font-size: 10px;
+        line-height: 1.4;
+        padding-top: 4px;
+    }
+    .nav-menu { gap: 6px; }
+    .nav-item { padding: 7px 10px; font-size: 12px; }
     .nav-label { font-size: 11px; }
 }
