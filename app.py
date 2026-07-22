@@ -550,7 +550,6 @@ def dual_market_narrative(row):
         asset_display = t('assets', lang).get(top_asset_key, top_asset_key)
         status_label, _color = get_market_status(score, thresh, lang)
         
-        # Format explicitly safely against NaNs
         if pd.isna(score) or pd.isna(thresh) or score < thresh:
             return t('narrative_calm', lang).format(status=status_label, driver=asset_display)
         else:
@@ -573,7 +572,6 @@ def build_figure(view, current_color, lang='en'):
     else:
         plot_df = DF.resample("ME").last()
 
-    # Safely compute chart boundaries even if data arrays contain only NaNs
     max_val = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) if not plot_df.empty else 0
     y_top = max_val * 1.15 if pd.notna(max_val) else 1.0
 
@@ -643,7 +641,6 @@ def build_contribution_chart(r_color, lang='en'):
 
     font_fam = 'ThmanyahSans, sans-serif' if lang == 'ar' else 'Inter, sans-serif'
     
-    # Safe float formatting for labels to prevent ValueError on NaN
     text_vals = [f"{v:.1f}%" if pd.notna(v) else "—" for v in contribs.values()]
     
     fig = go.Figure(go.Bar(
@@ -703,7 +700,6 @@ def hero_section():
     
     _, r_color = get_market_status(score, thresh, 'en') 
     
-    # Safe numerical logic for gap
     gap = score - thresh if pd.notna(score) and pd.notna(thresh) else np.nan
     up = gap >= 0 if pd.notna(gap) else True
     
@@ -760,7 +756,6 @@ def alert_card(date_idx, row):
     top_asset = max(contribs, key=lambda s: contribs[s] if pd.notna(contribs[s]) else -1)
     top_pct = contribs[top_asset]
     
-    # Safe pct layout
     pct_display = f"{top_pct:.0f}%" if pd.notna(top_pct) else "—"
     driver_txt = html.Span([
         html.Span(f"{get_asset(top_asset, 'en')} {pct_display}", className='lang-en'),
@@ -942,6 +937,12 @@ def sidebar():
         ]),
         html.Div(className='nav-container', children=[
             html.Div(nav, className='nav-menu'),
+            html.Div(className='nav-extra', children=[
+                html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
+            ]),
+        ]),
+        html.Div(className="sidebar-foot", children=[
+            html.Div("Made by Ziyad Alrefaei", className="made-by-credit")
         ])
     ])
 
@@ -1022,9 +1023,6 @@ def serve_layout():
             sidebar(),
             html.Div(className='main-content', children=[
                 html.Div(className='top-nav', children=[
-                    html.Div(className='nav-extra', children=[
-                        html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
-                    ]),
                     html.Div(className='status-indicator', children=[
                         html.Span(className='status-dot', style={'background': POS, 'boxShadow': f'0 0 10px {POS}'}),
                         html.Span(trans('live_data'), className='status-src')
@@ -1123,7 +1121,7 @@ def build_view(view_key, lang='en'):
                                  {'label': html.Span([html.Span("Full History (2005-Present)", className='lang-en'), html.Span("التاريخ الكامل (2005-الآن)", className='lang-ar')]), 'value': "Full History (2005-Present)"}],
                         value="Last 2 Years"),
                 ]),
-                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT, 'en'), config={'displayModeBar': False, 'responsive': True})]),
+                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT, lang), config={'displayModeBar': False, 'responsive': True})]),
             ])
         ])
 
@@ -1200,6 +1198,19 @@ def switch_view(n_clicks, current_class):
     
     return view_html, nav_classes
 
+@callback(
+    Output('contrib-chart', 'figure'),
+    Input('render-interval', 'n_intervals'),
+    State('root-container', 'className'),
+    prevent_initial_call=True
+)
+def load_deferred_charts(n, current_class):
+    if not DATA_OK: return no_update
+    lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
+    latest = DF.iloc[-1]
+    _, r_color = get_market_status(latest['Anomaly_Score'], latest['Threshold'], lang)
+    return build_contribution_chart(r_color, lang)
+
 @callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
 def update_timeline_chart(view, current_class):
     if not DATA_OK: return no_update
@@ -1232,7 +1243,7 @@ def load_news(n_clicks, btn_id):
         html.A("Read Source ↗", href=link, target="_blank", className='news-link'),
     ]) for (title, link, pub) in news]
 
-# Instant UI Language Switch & Plotly Chart Restyling (Decoupled from Outputs to prevent failing on hidden charts)
+# Decoupled Language Switcher. Instant updates using Plotly.relayout/restyle
 app.clientside_callback(
     """
     function(n_clicks, tr_data, current_class) {
