@@ -76,7 +76,10 @@ TR = {
         'within_7d': 'within ±7 days', 'all_history': 'all history', 'of_trading_days': 'of trading days',
         'date': 'Date', 'hist_event': 'Historical Event', 'composite': 'Composite', 'nearest': 'Nearest',
         'peak_score': 'Peak Score', 'detected': 'Detected', 'missed': 'Missed', 'top_driver': 'Top Driver',
-        'rarity': 'Rarity (p)', 'when': 'When', 'view_news': 'View news from', 'load_headlines': 'Load headlines',
+        'rarity': 'Rarity (p)',
+        'rarity_extreme': 'Extremely rare',
+        'rarity_very': 'Very rare',
+        'rarity_rare': 'Rare', 'when': 'When', 'view_news': 'View news from', 'load_headlines': 'Load headlines',
         'showing_recent': 'Showing most recent 20 matches.', 'no_anomaly': 'No anomaly days match this filter.',
         'all_years': 'All Years', 'all_months': 'All Months', 'status_normal': 'Normal', 'status_elevated': 'Elevated',
         'status_stress': 'Stress', 'status_crisis': 'Crisis',
@@ -99,10 +102,13 @@ TR = {
         
         'method_lead': 'How this dashboard turns five noisy markets into a single, defensible measure of systemic stress...',
         'm_title_1': 'What it measures', 'm_p_1': 'Every trading day, the model asks one question: how unusual is today, across the whole market at once? It watches five instruments — the S&P 500, Gold, Oil, the US Dollar Index, and the VIX volatility index — because real crises rarely show up in a single asset. They show up as several markets moving strangely together.',
-        'm_title_2': 'The composite score — an RMS z-score', 'm_p_2_1': 'Each market is first converted into a z-score: how many standard deviations today\'s move sits from its own recent 63-day norm. A z-score of 3 means a move roughly three times larger than what\'s been typical lately.', 'm_p_2_2': 'Those five z-scores are then combined into one number using the root-mean-square (RMS): we square each z-score, average them, and take the square root. Squaring means a single extreme market dominates the score.',
+        'm_title_2': 'The composite score — an RMS robust z-score', 'm_p_2_1': 'Each market is first converted into a robust z-score using the median and median absolute deviation (MAD) of its own recent 63-day window, rather than the mean and standard deviation. This matters because a single extreme day — like a market crash — can badly distort a mean and standard deviation for weeks afterward, while the median and MAD barely move, so today\'s score reflects today\'s move relative to a typical recent day, not one skewed by yesterday\'s crisis.', 'm_p_2_2': 'Those five robust z-scores are then combined into one number using the root-mean-square (RMS): we square each z-score, average them, and take the square root. Squaring means a single extreme market dominates the score.',
         'm_title_3': 'The threshold — causal, no look-ahead bias', 'm_p_3_1': 'A score only means something against a bar. The naive approach sets that bar using the mean and standard deviation of the entire history — but that secretly lets the future decide what counted as anomalous in the past.', 'm_p_3_2': 'Instead, the threshold here is an expanding, causal mean + 2σ: on any given day it is computed only from the scores that came strictly before it. Early history faces a calmer bar, and later years face a bar already raised by 2008 and 2020.',
         'm_title_4': 'The Isolation Forest cross-check', 'm_p_4_1': 'As an independent second opinion, the app runs an Isolation Forest — an unsupervised machine-learning model that flags points which are easy to isolate from the rest of the data.', 'm_p_4_2': 'When both methods agree a day is anomalous, that\'s a strong, model-agnostic signal. When they disagree, it\'s a prompt to look closer.',
-        'm_title_5': 'How to read the results — and the limits', 'm_p_5_1': 'Treat the score as a thermometer, not a crystal ball. A crossing means conditions are statistically unusual relative to the recent past — it is a prompt to investigate, not a trade signal.', 'm_p_5_2': 'Honest caveats: z-scores assume moves are roughly comparable over time, so structural regime shifts can distort them. The model is deliberately simple and auditable — that transparency is the point.',
+        'm_title_4b': 'Correlation-aware rarity — Mahalanobis distance',
+        'm_p_4b_1': "The chi-square p-value shown for each alert originally assumed the five markets move independently — but S&P 500 and VIX, for example, are strongly and predictably correlated, so treating them as independent overstates how surprising a coordinated move really is.",
+        'm_p_4b_2': "The rarity score now uses the Mahalanobis distance instead, which accounts for how the five z-scores typically move together, measured over a trailing 252-day window. A day where several markets move unusually in a way that breaks their normal relationship is flagged as genuinely rare; a day where they move together as expected is not.",
+        'm_title_5': 'How to read the results — and the limits', 'm_p_5_1': 'Treat the score as a thermometer, not a crystal ball. A crossing means conditions are statistically unusual relative to the recent past — it is a prompt to investigate, not a trade signal.', 'm_p_5_2': 'Honest caveats: robust z-scores still assume moves are roughly comparable over time, so structural regime shifts can distort them — though using the median and MAD makes each 63-day window far less sensitive to being thrown off by the very outliers it\'s trying to detect. The model is deliberately simple and auditable — that transparency is the point.',
         
         'fg_ext_fear': 'Extreme Fear', 'fg_fear': 'Fear', 'fg_neutral': 'Neutral', 'fg_greed': 'Greed', 'fg_ext_greed': 'Extreme Greed',
     },
@@ -123,7 +129,10 @@ TR = {
         'within_7d': 'بفارق ±7 أيام', 'all_history': 'طوال الفترة', 'of_trading_days': 'من أيام التداول',
         'date': 'التاريخ', 'hist_event': 'الحدث التاريخي', 'composite': 'النموذج المركب', 'nearest': 'أقرب تنبيه',
         'peak_score': 'أعلى درجة', 'detected': 'مرصود', 'missed': 'غير مرصود', 'top_driver': 'المحرك الأكبر',
-        'rarity': 'الندرة الإحصائية (p)', 'when': 'المدة', 'view_news': 'عرض الأخبار ليوم', 'load_headlines': 'تحميل العناوين',
+        'rarity': 'الندرة الإحصائية (p)',
+        'rarity_extreme': 'نادر جدًا',
+        'rarity_very': 'نادر للغاية',
+        'rarity_rare': 'نادر', 'when': 'المدة', 'view_news': 'عرض الأخبار ليوم', 'load_headlines': 'تحميل العناوين',
         'showing_recent': 'عرض أحدث 20 نتيجة.', 'no_anomaly': 'لا توجد تنبيهات مطابقة.',
         'all_years': 'كل السنوات', 'all_months': 'كل الأشهر', 'status_normal': 'طبيعي', 'status_elevated': 'مرتفع',
         'status_stress': 'ضغط', 'status_crisis': 'أزمة',
@@ -146,12 +155,16 @@ TR = {
         
         'method_lead': 'كيف تقوم هذه اللوحة بتحليل بيانات خمسة أسواق مختلفة لتحويلها إلى مقياس دقيق للضغط النظامي، ولماذا تعتبر الخيارات الإحصائية مهمة عند قراءة النتائج.',
         'm_title_1': 'ما الذي يتم قياسه؟', 'm_p_1': 'في كل يوم تداول، يطرح النموذج سؤالاً واحداً: ما مدى شذوذ تحركات اليوم عبر السوق بأكمله؟ يراقب النموذج خمسة أصول رئيسية — مؤشر S&P 500، الذهب، النفط، مؤشر الدولار، ومؤشر التقلب VIX — لأن الأزمات الحقيقية نادراً ما تقتصر على أصل واحد، بل تظهر كتحركات غير اعتيادية متزامنة في عدة أسواق.',
-        'm_title_2': 'الدرجة المركبة (Z-Score)', 'm_p_2_1': 'أولاً، يتم تحويل أداء كل سوق إلى درجة معيارية (Z-Score) لقياس مدى انحرافه عن متوسط الـ 63 يومًا الماضية. الحصول على درجة 3 يعني أن التحرك أكبر بثلاث مرات من المعتاد.', 'm_p_2_2': 'بعد ذلك، تُدمج هذه الدرجات في رقم واحد باستخدام جذر متوسط المربعات (RMS). عملية التربيع تعني أن أي انحراف شديد في سوق واحد سيهيمن على الدرجة النهائية، وهو ما يعكس طبيعة الأزمات الحقيقية.',
+        'm_title_2': 'معدل Z-Score المركب القوي (RMS)', 'm_p_2_1': 'يتم تحويل كل سوق أولًا إلى معدل Z-Score قوي باستخدام الوسيط والانحراف المطلق عن الوسيط (MAD) لآخر 63 يوم تداول، بدلًا من المتوسط والانحراف المعياري. هذا مهم لأن يومًا واحدًا شديد التطرف — كانهيار سوق — يمكن أن يشوّه المتوسط والانحراف المعياري لأسابيع لاحقة، بينما يبقى الوسيط وMAD شبه ثابتين، فتعكس نتيجة اليوم حركته الفعلية مقارنة بيوم نموذجي حديث، لا يومًا متأثرًا بأزمة الأمس.', 'm_p_2_2': 'يتم بعد ذلك دمج معدلات Z-Score القوية الخمسة في رقم واحد باستخدام الجذر التربيعي لمتوسط المربعات (RMS): نربّع كل معدل، نحسب متوسطها، ثم نأخذ الجذر التربيعي. التربيع يعني أن سوقًا واحدًا شديد التطرف يهيمن على النتيجة.',
         'm_title_3': 'الحد الديناميكي (تجنب الانحياز للمستقبل)', 'm_p_3_1': 'استخدام متوسط الانحراف لكل التاريخ لضبط حد التنبيه يعتبر خطأً إحصائياً، لأنه يسمح لأحداث المستقبل بالتأثير على تقييم الماضي (Look-ahead bias).', 'm_p_3_2': 'بدلاً من ذلك، يستخدم النموذج هنا حداً ديناميكياً يتوسع بمرور الوقت (المتوسط التراكمي + 2σ)، حيث يتم احتسابه يومياً باستخدام البيانات السابقة فقط. هذا يضمن أن تقييم الأزمات السابقة يتم بناءً على ما كان معروفاً في ذلك الوقت بدقة.',
         'm_title_4': 'نموذج العزل (Isolation Forest)', 'm_p_4_1': 'كوسيلة للتحقق المستقل، يشغل النظام نموذجاً للتعلم الآلي غير الخاضع للإشراف لتحديد النقاط التي يَسهُل "عزلها" إحصائياً عن بقية البيانات.', 'm_p_4_2': 'عندما يتفق كلا النموذجين على وجود شذوذ في يوم ما، فإن ذلك يمثل إشارة قوية وحيادية. وعندما يختلفان، يكون ذلك دافعاً للتحليل المتعمق.',
-        'm_title_5': 'كيفية قراءة النتائج والقيود', 'm_p_5_1': 'تعامل مع هذه الدرجة كمقياس لحرارة الأسواق، وليس كأداة للتنبؤ. تجاوز الحد يعني أن الظروف استثنائية إحصائياً مقارنة بالماضي القريب — هي دعوة للمراقبة والتحقق وليست إشارة بيع أو شراء.', 'm_p_5_2': 'يجب ملاحظة أن النموذج يفترض أن التحركات قابلة للمقارنة بمرور الوقت، لذا فإن التغيرات الهيكلية قد تؤثر على الدرجات المعيارية. صُمم النموذج ليكون بسيطاً وقابلاً للتدقيق — وهذه الشفافية هي الهدف الأساسي.',
-        
-        'fg_ext_fear': 'خوف شديد', 'fg_fear': 'خوف', 'fg_neutral': 'محايد', 'fg_greed': 'طمع', 'fg_ext_greed': 'طمع شديد',
+        'm_title_4b': 'الندرة المدركة للترابط — مسافة ماهالانوبيس',
+        'm_p_4b_1': 'كانت قيمة p لمربع كاي المعروضة لكل تنبيه تفترض أصلًا أن الأسواق الخمسة تتحرك بشكل مستقل — لكن S&P 500 ومؤشر VIX، على سبيل المثال، مرتبطان بقوة وبشكل متوقع، فمعاملتهما كمستقلين يضخّم مدى غرابة الحركة المتزامنة فعليًا.',
+        'm_p_4b_2': 'تعتمد درجة الندرة الآن على مسافة ماهالانوبيس بدلًا من ذلك، والتي تأخذ في الاعتبار كيفية تحرك معدلات Z-Score الخمسة معًا عادةً، بقياسها عبر نافذة سببية مدتها 252 يومًا. يتم تصنيف اليوم الذي تتحرك فيه عدة أسواق بشكل غير معتاد بما يكسر علاقتها الطبيعية على أنه نادر فعليًا؛ بينما لا يُصنَّف اليوم الذي تتحرك فيه معًا كما هو متوقع كذلك.',
+        'm_title_5': 'كيفية قراءة النتائج — وحدودها',
+          'm_p_5_1': 'تعامل مع النتيجة كترمومتر، وليس ككرة بلورية. تجاوز الحد يعني أن الظروف غير معتادة إحصائيًا مقارنة بالماضي القريب — إنها دعوة للتحقق، وليست إشارة تداول.',
+          'm_p_5_2': 'تنبيه صريح: لا تزال معدلات Z-Score القوية تفترض أن الحركات قابلة للمقارنة بمرور الوقت، لذا يمكن أن تشوّهها التحولات الهيكلية في السوق — إلا أن استخدام الوسيط وMAD يجعل كل نافذة 63 يومًا أقل تأثرًا بالقيم المتطرفة التي يحاول النموذج رصدها أصلًا. النموذج مصمم عمدًا ليكون بسيطًا وقابلاً للتدقيق — وهذه الشفافية هي الهدف الأساسي  .',
+     'fg_ext_fear': 'خوف شديد', 'fg_fear': 'خوف', 'fg_neutral': 'محايد', 'fg_greed': 'طمع', 'fg_ext_greed': 'طمع شديد',
     }
 }
 
@@ -333,71 +346,108 @@ def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
     df = prices.copy()
     active_price_assets = [c for c in ['S&P500', 'Gold', 'Oil_WTI', 'USD_Index'] if c in df.columns]
     active_signals = [c for c in SIGNALS if c in df.columns]
-
     for col in active_price_assets:
-        df[f'{col}_Return'] = np.log(df[col] / df[col].shift(1))
-        df[f'{col}_RollMean'] = df[f'{col}_Return'].rolling(window).mean()
-        df[f'{col}_RollStd'] = df[f'{col}_Return'].rolling(window).std()
-        df[f'{col}_Zscore'] = (df[f'{col}_Return'] - df[f'{col}_RollMean']) / df[f'{col}_RollStd']
+        df[f'{col}_Return'] = np.log(df[col].clip(lower=1e-9) / df[col].shift(1).clip(lower=1e-9))
+        rolling_median = df[f'{col}_Return'].rolling(window).median()
+        rolling_mad = df[f'{col}_Return'].rolling(window).apply(lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))), raw=True)
+        roll_std = (rolling_mad * 1.4826).replace(0, np.nan)
+        
+        df[f'{col}_RollMean'] = rolling_median
+        df[f'{col}_RollStd'] = roll_std
+        df[f'{col}_Zscore'] = (df[f'{col}_Return'] - rolling_median) / roll_std
 
     if 'VIX' in df.columns:
-        df['VIX_RollMean'] = df['VIX'].rolling(window).mean()
-        df['VIX_RollStd'] = df['VIX'].rolling(window).std()
-        df['VIX_Zscore'] = (df['VIX'] - df['VIX_RollMean']) / df['VIX_RollStd']
+        rolling_median = df['VIX'].rolling(window).median()
+        rolling_mad = df['VIX'].rolling(window).apply(lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))), raw=True)
+        roll_std = (rolling_mad * 1.4826).replace(0, np.nan)
+        
+        df['VIX_RollMean'] = rolling_median
+        df['VIX_RollStd'] = roll_std
+        df['VIX_Zscore'] = (df['VIX'] - rolling_median) / roll_std
 
     zcols = [f'{s}_Zscore' for s in active_signals]
     n = len(zcols)
     
     if n == 0:
-        df['Anomaly_Score'] = np.nan
+        df['AnomalyScore'] = np.nan
         df['Threshold'] = np.nan
         df['Flagged'] = False
         return df
 
+    valid_count = df[zcols].notna().sum(axis=1).replace(0, np.nan)
     sum_sq = (df[zcols] ** 2).sum(axis=1)
-    safe = sum_sq.replace(0, np.nan)
-    df['Sum_Sq_Z'] = sum_sq
-    df['Anomaly_Score'] = np.sqrt(sum_sq / n)
+    df['SumSqZ'] = sum_sq
+    df['AnomalyScore'] = np.sqrt(sum_sq / valid_count)
 
+    safe_denom = sum_sq.replace(0, np.nan)
     for s in active_signals:
-        df[f'{s}_Contribution'] = (df[f'{s}_Zscore'] ** 2 / safe) * 100
+        df[f'{s}_Contribution'] = (df[f'{s}_Zscore'] ** 2 / safe_denom) * 100
         
     for s in SIGNALS:
         if s not in active_signals:
             df[f'{s}_Contribution'] = np.nan
 
-    df['Anomaly_PValue'] = chi2.sf(df['Sum_Sq_Z'].values, df=n) if HAS_SCIPY else np.nan
-    exp_mean = df['Anomaly_Score'].expanding(min_periods=burn_in).mean().shift(1)
-    exp_std = df['Anomaly_Score'].expanding(min_periods=burn_in).std().shift(1)
-    df['Threshold'] = exp_mean + k * exp_std
-    df['Flagged'] = df['Anomaly_Score'] > df['Threshold']
+    df['AnomalyPValue'] = chi2.sf(df['SumSqZ'].values, df=valid_count.values) if HAS_SCIPY else np.nan
+    df['AnomalyPValue_MV'] = compute_mahalanobis_pvalues(df, active_signals)
+    
+    p = 0.08
+    df['Threshold'] = df['AnomalyScore'].expanding(min_periods=burn_in).quantile(1 - p).shift(1)
+    df['Flagged'] = df['AnomalyScore'] > df['Threshold']
     return df
 
-def compute_isolation_forest(scored_df, contamination):
+def compute_isolation_forest(scored_df, contamination, burn_in=252, refit_every=63):
     active_signals = [s for s in SIGNALS if f'{s}_Zscore' in scored_df.columns]
     zcols = [f'{s}_Zscore' for s in active_signals]
-    
+    out = pd.DataFrame(index=scored_df.index)
+    out['IF_Score'] = np.nan
+    out['IF_Flagged'] = False
     if not zcols:
-        out = pd.DataFrame(index=scored_df.index)
-        out['IF_Score'] = np.nan
-        out['IF_Flagged'] = False
         return out
-        
     feat = scored_df[zcols].dropna()
-    if feat.empty:
-        out = pd.DataFrame(index=scored_df.index)
-        out['IF_Score'] = np.nan
-        out['IF_Flagged'] = False
+    if len(feat) <= burn_in:
         return out
-        
-    clf = IsolationForest(n_estimators=300, contamination=contamination, random_state=42)
-    clf.fit(feat.values)
-    out = pd.DataFrame(index=feat.index)
-    out['IF_Score'] = -clf.score_samples(feat.values)
-    out['IF_Flagged'] = (clf.predict(feat.values) == -1)
-    out = out.reindex(scored_df.index)
+
+    scores = pd.Series(np.nan, index=feat.index)
+    flags = pd.Series(False, index=feat.index)
+
+    for start in range(burn_in, len(feat), refit_every):
+        train = feat.iloc[:start]
+        test_end = min(start + refit_every, len(feat))
+        test = feat.iloc[start:test_end]
+        if train.empty or test.empty:
+            continue
+        clf = IsolationForest(n_estimators=300, contamination=contamination, random_state=42)
+        clf.fit(train.values)
+        scores.iloc[start:test_end] = -clf.score_samples(test.values)
+        flags.iloc[start:test_end] = clf.predict(test.values) == -1
+
+    out.loc[feat.index, 'IF_Score'] = scores
+    out.loc[feat.index, 'IF_Flagged'] = flags.fillna(False)
     out['IF_Flagged'] = out['IF_Flagged'].fillna(False).astype(bool)
     return out
+
+def compute_mahalanobis_pvalues(df, active_signals, window=252, min_periods=126):
+    zcols = [f'{s}_Zscore' for s in active_signals]
+    n = len(active_signals)
+    Z = df[zcols]
+    pvals = pd.Series(np.nan, index=df.index)
+    for i in range(len(df)):
+        if i < min_periods:
+            continue
+        lo = max(0, i - window)
+        hist = Z.iloc[lo:i].dropna()
+        if len(hist) < min_periods:
+            continue
+        x = Z.iloc[i].values
+        if np.isnan(x).any():
+            continue
+        cov = hist.cov().values
+        inv_cov = np.linalg.pinv(cov)
+        mean = hist.mean().values
+        diff = x - mean
+        d2 = float(diff @ inv_cov @ diff)
+        pvals.iloc[i] = chi2.sf(d2, n) if HAS_SCIPY else np.nan
+    return pvals    
 
 def validate_events(scored_df, events, flag_col='Flagged', window_days=7):
     rows = []
@@ -409,7 +459,7 @@ def validate_events(scored_df, events, flag_col='Flagged', window_days=7):
         detected = bool(win[flag_col].fillna(False).any()) if len(win) else False
         wide = fidx[(fidx >= d - pd.Timedelta(days=30)) & (fidx <= d + pd.Timedelta(days=30))]
         nearest = int(min(abs((f - d).days) for f in wide)) if len(wide) else None
-        peak = float(win['Anomaly_Score'].max()) if len(win) and win['Anomaly_Score'].notna().any() else None
+        peak = float(win['AnomalyScore'].max()) if len(win) and win['AnomalyScore'].notna().any() else None
         rows.append({'date': ds, 'event': desc, 'detected': detected, 'nearest': nearest, 'peak': peak})
     return rows
 
@@ -540,7 +590,7 @@ def get_market_status(score, threshold, lang):
     return t('status_crisis', lang), "#E02424"
 
 def dual_market_narrative(row):
-    score = row.get('Anomaly_Score', np.nan)
+    score = row.get('AnomalyScore', np.nan)
     thresh = row.get('Threshold', np.nan)
     contribs = {s: row.get(f'{s}_Contribution', 0) for s in SIGNALS}
     top_asset_key = max(contribs, key=lambda s: contribs[s] if pd.notna(contribs[s]) else -1)
@@ -570,18 +620,22 @@ def build_figure(view, current_color, lang='en'):
     elif view == "Last 2 Years" or view == t('ranges', lang).get("Last 2 Years"):
         plot_df = DF.tail(504).resample("W").last()
     else:
-        plot_df = DF.resample("ME").last()
+        def _pick_peak(g):
+            if g['AnomalyScore'].notna().any():
+                return g.loc[g['AnomalyScore'].idxmax()]
+            return g.iloc[-1]
+        plot_df = DF.groupby(pd.Grouper(freq='ME')).apply(_pick_peak)
 
-    max_val = np.nanmax([plot_df['Anomaly_Score'].max(), plot_df['Threshold'].max()]) if not plot_df.empty else 0
+    max_val = np.nanmax([plot_df['AnomalyScore'].max(), plot_df['Threshold'].max()]) if not plot_df.empty else 0
     y_top = max_val * 1.15 if pd.notna(max_val) else 1.0
 
     fig = go.Figure()
 
-    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines',
+    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['AnomalyScore'], mode='lines',
                              line=dict(color=tint(current_color, 0.2), width=5, shape='spline', smoothing=0.35),
                              hoverinfo='skip', showlegend=False))
     
-    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['Anomaly_Score'], mode='lines', name=t('chart_score', lang),
+    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['AnomalyScore'], mode='lines', name=t('chart_score', lang),
                              line=dict(color=current_color, width=2, shape='spline', smoothing=0.35),
                              fill='tozeroy', fillcolor=tint(current_color, 0.08),
                              hovertemplate='Score: <b>%{y:.2f}</b><extra></extra>'))
@@ -591,7 +645,7 @@ def build_figure(view, current_color, lang='en'):
                              hovertemplate='Limit: %{y:.2f}<extra></extra>'))
 
     fp = plot_df[plot_df['Flagged'] == True]
-    fig.add_trace(go.Scatter(x=fp.index, y=fp['Anomaly_Score'], mode='markers',
+    fig.add_trace(go.Scatter(x=fp.index, y=fp['AnomalyScore'], mode='markers',
                              marker=dict(color=DANGER, size=6, line=dict(color='#000000', width=1)),
                              hovertemplate='⚠ Flagged Day<br>Score: <b>%{y:.2f}</b><extra></extra>', name=t('anomaly', lang)))
 
@@ -618,9 +672,9 @@ def build_figure(view, current_color, lang='en'):
                                       font=dict(family=font_fam, size=13, color='#FAFAFA')))
     
     fig.update_xaxes(showgrid=False, showline=True, linecolor='rgba(255,255,255,0.1)', zeroline=False,
-                     showspikes=True, spikemode='across', spikecolor='rgba(255,255,255,0.15)',
-                     spikethickness=1, spikedash='solid', ticks='outside', tickcolor='rgba(255,255,255,0.1)',
-                     tickfont=dict(size=11, color='#71717A'))
+                 showspikes=True, spikemode='across', spikecolor='rgba(255,255,255,0.15)',
+                 spikethickness=1, spikedash='solid', ticks='outside', tickcolor='rgba(255,255,255,0.1)',
+                 tickfont=dict(size=11, color='#71717A'), hoverformat='%b %d, %Y')
     fig.update_yaxes(range=[0, y_top], showgrid=True, gridcolor='rgba(255,255,255,0.05)', zeroline=False,
                      tickfont=dict(size=11, color='#71717A'), ticksuffix='  ')
     fig.update_traces(cliponaxis=False)
@@ -695,7 +749,7 @@ def fear_greed_kpi():
 
 def hero_section():
     latest = DF.iloc[-1]
-    score = latest.get('Anomaly_Score', np.nan)
+    score = latest.get('AnomalyScore', np.nan)
     thresh = latest.get('Threshold', np.nan)
     
     _, r_color = get_market_status(score, thresh, 'en') 
@@ -748,7 +802,7 @@ def alert_card(date_idx, row):
     date_str = date_idx.strftime("%Y-%m-%d")
     days_ago = (datetime.now() - date_idx.to_pydatetime().replace(tzinfo=None)).days
     
-    is_severe = row['Anomaly_Score'] > row['Threshold'] * 1.3
+    is_severe = row['AnomalyScore'] > row['Threshold'] * 1.3
     sev_label = html.Span([html.Span(t('alert_severe', 'en'), className='lang-en'), html.Span(t('alert_severe', 'ar'), className='lang-ar')]) if is_severe else html.Span([html.Span(t('alert_moderate', 'en'), className='lang-en'), html.Span(t('alert_moderate', 'ar'), className='lang-ar')])
     sev = DANGER if is_severe else WARN
 
@@ -772,10 +826,18 @@ def alert_card(date_idx, row):
         stat_chip("VIX", vix_val),
         stat_chip('chart_limit', thresh_val),
     ]
-    pval = row.get('Anomaly_PValue', np.nan)
-    if pd.notna(pval):
-        stats.append(stat_chip('rarity', f"{pval*100:.2f}%"))
-        
+    p_val = row.get('AnomalyPValue_MV', row.get('AnomalyPValue', np.nan))
+    if pd.notna(p_val):
+        if p_val < 1e-10:
+            rarity_comp = trans('rarity_extreme')
+        elif p_val < 0.001:
+            rarity_comp = trans('rarity_very')
+        elif p_val < 0.05:
+            rarity_comp = trans('rarity_rare')
+        else:
+            rarity_comp = f"{p_val*100:.2f}%"
+        stats.append(stat_chip('rarity', rarity_comp))
+
     days_ago_comp = html.Span([
         html.Span(f"{days_ago} {t('days_ago_suffix', 'en')}", className='lang-en'),
         html.Span(f"قبل {days_ago} يوم", className='lang-ar')
@@ -806,7 +868,7 @@ def alert_card(date_idx, row):
                     html.Span(sev_label, className='sev-pill',
                               style={'color': sev, 'background': tint(sev, 0.15), 'border': f'1px solid {tint(sev, 0.25)}'}),
                 ]),
-                html.Span(f"{row['Anomaly_Score']:.2f}", className='alert-score', style={'color': sev}),
+                html.Span(f"{row['AnomalyScore']:.2f}", className='alert-score', style={'color': sev}),
             ]),
             html.Div(stats, className='alert-stats'),
             html.Details(details_children, className='news-details'),
@@ -902,6 +964,7 @@ def methodology_view():
         _method_block('lucide:sigma', 'm_title_2', ['m_p_2_1', 'm_p_2_2']),
         _method_block('lucide:git-branch', 'm_title_3', ['m_p_3_1', 'm_p_3_2']),
         _method_block('lucide:box', 'm_title_4', ['m_p_4_1', 'm_p_4_2']),
+        _method_block('lucide:network', 'm_title_4b', ['m_p_4b_1', 'm_p_4b_2']),
         _method_block('lucide:eye', 'm_title_5', ['m_p_5_1', 'm_p_5_2']),
     ])
 
@@ -1045,7 +1108,7 @@ def serve_layout():
 def build_view(view_key, lang='en'):
     if view_key == "overview":
         latest = DF.iloc[-1]
-        score, thresh = latest.get('Anomaly_Score', np.nan), latest.get('Threshold', np.nan)
+        score, thresh = latest.get('AnomalyScore', np.nan), latest.get('Threshold', np.nan)
         _, r_color = get_market_status(score, thresh, 'en')
         
         try:
