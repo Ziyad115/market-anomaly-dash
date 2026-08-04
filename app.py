@@ -531,14 +531,14 @@ def init_data():
         'detected': detected, 'total_ev': total_ev, 'recall': (detected / total_ev * 100) if total_ev else 0.0,
         'total_flags': total_flags, 'flag_rate': flag_rate,
         'if_detected': (sum(r['detected'] for r in VAL_IF) if VAL_IF else None),
-        'updated': datetime.now().strftime("%d %b · %H:%M"),
+        'updated': (datetime.now() + timedelta(hours=3)).strftime("%d %b · %H:%M"),
     }
     if VAL_IF: SUMMARY['if_recall'] = (SUMMARY['if_detected'] / total_ev * 100) if total_ev else 0.0
 
     flags = DF[DF['Flagged'] == True]
     AVAIL_YEARS = sorted(flags.index.year.unique(), reverse=True)
     TRADING_DAYS = int(len(DF))
-    LOADED_AT = datetime.now().strftime("%d %b %Y · %H:%M:%S")
+    LOADED_AT = (datetime.now() + timedelta(hours=3)).strftime("%d %b %Y · %H:%M:%S")
     DATA_OK = True
 
 def run_init_in_background():
