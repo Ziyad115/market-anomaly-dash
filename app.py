@@ -574,9 +574,27 @@ def run_init_in_background():
     finally:
         if os.path.exists(LOCK_FILE):
             os.remove(LOCK_FILE)
+def periodic_refresh(interval_hours=1):
+    while True:
+        time.sleep(interval_hours * 3600)
+        try:
+            print("[REFRESH] Starting scheduled data refresh...", flush=True)
+            init_data()
+            state = {'DF': DF, 'DF_IF': DF_IF, 'VAL': VAL, 'VAL_IF': VAL_IF,
+                      'AVAIL_YEARS': AVAIL_YEARS, 'SUMMARY': SUMMARY, 'DATA_OK': DATA_OK,
+                      'LOAD_ERR': LOAD_ERR, 'TRADING_DAYS': TRADING_DAYS, 'LOADED_AT': LOADED_AT,
+                      'DATA_SOURCE': DATA_SOURCE, 'FG_CACHE': FG_CACHE}
+            with open(STATE_FILE, 'wb') as f:
+                pickle.dump(state, f)
+            print("[REFRESH] Scheduled refresh complete.", flush=True)
+        except Exception as e:
+            print(f"[REFRESH ERROR] {e}", flush=True)
 
-if not os.environ.get("APP_SKIP_LOAD"):
+if not os.environ.get('APP_SKIP_LOAD'):
     threading.Thread(target=run_init_in_background, daemon=True).start()
+    threading.Thread(target=periodic_refresh, daemon=True).start()
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
