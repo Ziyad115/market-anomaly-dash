@@ -295,20 +295,21 @@ def _clean_close(c):
 def _fetch_close(sym):
     """Fetch a Close series for one symbol, trying yf.download then Ticker.history.
     Some Yahoo symbols (notably ^-prefixed indices like ^TASI.SR) intermittently
-    return empty via download() but succeed via the Ticker.history() endpoint."""
+    return empty via download() but succeed via the Ticker.history() endpoint.
+    NB: for a single ticker yfinance may return MultiIndex columns, so index into
+    d['Close'] directly (which selects the level) rather than testing membership."""
     try:
-        d = yf.download(sym, start='2005-01-01', progress=False, auto_adjust=False)
-        c = _clean_close(d['Close']) if 'Close' in d else None
+        d = yf.download(sym, start='2005-01-01', progress=False)
+        c = _clean_close(d['Close'])
         if c is not None:
             return c
     except Exception:
         pass
     try:
-        h = yf.Ticker(sym).history(start='2005-01-01', auto_adjust=False)
-        if 'Close' in h:
-            c = _clean_close(h['Close'])
-            if c is not None:
-                return c
+        h = yf.Ticker(sym).history(start='2005-01-01')
+        c = _clean_close(h['Close'])
+        if c is not None:
+            return c
     except Exception:
         pass
     return None
