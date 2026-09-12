@@ -69,7 +69,10 @@ MODES = {
         'display_assets': [('S&P500', ',.0f'), ('VIX', '.1f')],
     },
     'saudi': {
-        'tickers': {'TASI': '^TASI.SR', 'Oil_Brent': 'BZ=F', 'Gold': 'GC=F'},
+        # ^TASI.SR is the Tadawul All Share Index; it intermittently returns empty
+        # through yfinance, so KSA (iShares MSCI Saudi Arabia ETF) is a reliable
+        # Saudi-equity fallback. Both are return-scored, so the price scale is irrelevant.
+        'tickers': {'TASI': ['^TASI.SR', 'KSA'], 'Oil_Brent': ['BZ=F', 'BNO'], 'Gold': 'GC=F'},
         'fred_map': {'Oil_Brent': 'DCOILBRENTEU'},
         'signals': ['TASI', 'Oil_Brent', 'Gold'],
         'level_assets': [],
@@ -276,24 +279,52 @@ _LOCAL_CACHE_TS = 0
 # ─────────────────────────────────────────────────────────────────────────────
 #  DATA LOGIC & ASYNC FETCHING
 # ─────────────────────────────────────────────────────────────────────────────
+def _clean_close(c):
+    if c is None or len(c) == 0:
+        return None
+    if isinstance(c, pd.DataFrame):
+        c = c.iloc[:, 0]
+    c = c.dropna()
+    if len(c) == 0:
+        return None
+    c.index = pd.to_datetime(c.index)
+    if c.index.tz is not None:
+        c.index = c.index.tz_localize(None)
+    return c
+
+def _fetch_close(sym):
+    """Fetch a Close series for one symbol, trying yf.download then Ticker.history.
+    Some Yahoo symbols (notably ^-prefixed indices like ^TASI.SR) intermittently
+    return empty via download() but succeed via the Ticker.history() endpoint."""
+    try:
+        d = yf.download(sym, start='2005-01-01', progress=False, auto_adjust=False)
+        c = _clean_close(d['Close']) if 'Close' in d else None
+        if c is not None:
+            return c
+    except Exception:
+        pass
+    try:
+        h = yf.Ticker(sym).history(start='2005-01-01', auto_adjust=False)
+        if 'Close' in h:
+            c = _clean_close(h['Close'])
+            if c is not None:
+                return c
+    except Exception:
+        pass
+    return None
+
 def fetch_single_ticker(name, t_sym):
-    close = None
-    for attempt in range(4):
-        try:
-            d = yf.download(t_sym, start='2005-01-01', progress=False)
-            c = d['Close']
-            if isinstance(c, pd.DataFrame): c = c.iloc[:, 0]
-            if len(c) > 0:
-                c.index = pd.to_datetime(c.index)
-                if c.index.tz is not None:
-                    c.index = c.index.tz_localize(None)
-                close = c
-                break
-        except Exception:
-            pass
-        time.sleep((0.5 * (2 ** attempt)) + random.uniform(0, 0.5))
-        
-    return name, close if close is not None else pd.Series(dtype=float), "yfinance"
+    """t_sym may be a single symbol or a list of fallback candidates tried in order.
+    The first candidate that returns data wins; the source label records which symbol."""
+    candidates = [t_sym] if isinstance(t_sym, str) else list(t_sym)
+    for sym in candidates:
+        for attempt in range(3):
+            c = _fetch_close(sym)
+            if c is not None:
+                return name, c, f"yfinance:{sym}"
+            time.sleep((0.4 * (2 ** attempt)) + random.uniform(0, 0.4))
+
+    return name, pd.Series(dtype=float), "yfinance"
 
 def fetch_fg():
     global FG_CACHE
@@ -596,13 +627,40 @@ def compute_mode(mode):
     }
     return bundle, sources
 
-def init_data():
-    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT
-    global MODE_DATA, DATA_SOURCE
+def _write_state():
+    state = {
+        'MODE_DATA': MODE_DATA,
+        'DF': DF, 'DF_IF': DF_IF, 'VAL': VAL, 'VAL_IF': VAL_IF,
+        'AVAIL_YEARS': AVAIL_YEARS, 'SUMMARY': SUMMARY, 'DATA_OK': DATA_OK,
+        'LOAD_ERR': LOAD_ERR, 'TRADING_DAYS': TRADING_DAYS,
+        'LOADED_AT': LOADED_AT, 'DATA_SOURCE': DATA_SOURCE,
+        'FG_CACHE': FG_CACHE
+    }
+    try:
+        with open(STATE_FILE, "wb") as f:
+            pickle.dump(state, f)
+    except Exception as e:
+        print(f"[STATE WRITE ERROR] {e}")
+
+def _publish_globals(all_sources):
+    """Point the legacy module-level aliases at the default mode and mark data ready."""
+    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, TRADING_DAYS, LOADED_AT, DATA_SOURCE, DATA_OK
+    DATA_SOURCE = ", ".join(sorted(all_sources)) if all_sources else "unknown"
+    g = MODE_DATA[DEFAULT_MODE]
+    DF, DF_IF, VAL, VAL_IF = g['DF'], g['DF_IF'], g['VAL'], g['VAL_IF']
+    AVAIL_YEARS, SUMMARY, TRADING_DAYS = g['AVAIL_YEARS'], g['SUMMARY'], g['TRADING_DAYS']
+    LOADED_AT = (datetime.now() + timedelta(hours=3)).strftime("%d %b %Y · %H:%M:%S")
+    DATA_OK = True
+
+def init_data(on_progress=None):
+    global MODE_DATA
     new_mode_data = {}
     all_sources = set()
 
-    for mode in MODES:
+    # Load the default mode first so the app can render; other modes are best-effort
+    # and load afterwards without blocking the initial page.
+    order = [DEFAULT_MODE] + [m for m in MODES if m != DEFAULT_MODE]
+    for mode in order:
         try:
             bundle, sources = compute_mode(mode)
         except Exception as e:
@@ -612,19 +670,19 @@ def init_data():
         if bundle is not None:
             new_mode_data[mode] = bundle
 
-    # The default mode must load for the app to be usable; other modes are best-effort.
-    if DEFAULT_MODE not in new_mode_data:
-        raise ValueError("Data fetch returned empty DataFrame. No signals available for the default mode.")
+        if mode == DEFAULT_MODE:
+            if DEFAULT_MODE not in new_mode_data:
+                raise ValueError("Data fetch returned empty DataFrame. No signals available for the default mode.")
+            # Publish + persist the default mode immediately; the UI unblocks now.
+            MODE_DATA = dict(new_mode_data)
+            _publish_globals(all_sources)
+            if on_progress:
+                on_progress()
 
     MODE_DATA = new_mode_data
-    DATA_SOURCE = ", ".join(sorted(all_sources)) if all_sources else "unknown"
-
-    # Point legacy module-level aliases at the default mode.
-    g = MODE_DATA[DEFAULT_MODE]
-    DF, DF_IF, VAL, VAL_IF = g['DF'], g['DF_IF'], g['VAL'], g['VAL_IF']
-    AVAIL_YEARS, SUMMARY, TRADING_DAYS = g['AVAIL_YEARS'], g['SUMMARY'], g['TRADING_DAYS']
-    LOADED_AT = (datetime.now() + timedelta(hours=3)).strftime("%d %b %Y · %H:%M:%S")
-    DATA_OK = True
+    _publish_globals(all_sources)
+    if on_progress:
+        on_progress()
 
 def run_init_in_background():
     global DATA_OK, LOAD_ERR
@@ -634,19 +692,10 @@ def run_init_in_background():
         
     print("[INIT] Starting background data load...")
     try:
-        open(LOCK_FILE, "w").close() 
-        init_data()
-        
-        state = {
-            'MODE_DATA': MODE_DATA,
-            'DF': DF, 'DF_IF': DF_IF, 'VAL': VAL, 'VAL_IF': VAL_IF,
-            'AVAIL_YEARS': AVAIL_YEARS, 'SUMMARY': SUMMARY, 'DATA_OK': DATA_OK,
-            'LOAD_ERR': LOAD_ERR, 'TRADING_DAYS': TRADING_DAYS,
-            'LOADED_AT': LOADED_AT, 'DATA_SOURCE': DATA_SOURCE,
-            'FG_CACHE': FG_CACHE
-        }
-        with open(STATE_FILE, "wb") as f:
-            pickle.dump(state, f)
+        open(LOCK_FILE, "w").close()
+        # on_progress persists state after the default mode is ready, then again
+        # once every mode has loaded, so the page can render as early as possible.
+        init_data(on_progress=_write_state)
         print("[INIT] Background data load complete. State saved to disk.")
         
     except Exception as e:
@@ -665,14 +714,7 @@ def periodic_refresh(interval_hours=1):
         time.sleep(interval_hours * 3600)
         try:
             print("[REFRESH] Starting scheduled data refresh...", flush=True)
-            init_data()
-            state = {'MODE_DATA': MODE_DATA,
-                      'DF': DF, 'DF_IF': DF_IF, 'VAL': VAL, 'VAL_IF': VAL_IF,
-                      'AVAIL_YEARS': AVAIL_YEARS, 'SUMMARY': SUMMARY, 'DATA_OK': DATA_OK,
-                      'LOAD_ERR': LOAD_ERR, 'TRADING_DAYS': TRADING_DAYS, 'LOADED_AT': LOADED_AT,
-                      'DATA_SOURCE': DATA_SOURCE, 'FG_CACHE': FG_CACHE}
-            with open(STATE_FILE, 'wb') as f:
-                pickle.dump(state, f)
+            init_data(on_progress=_write_state)
             print("[REFRESH] Scheduled refresh complete.", flush=True)
         except Exception as e:
             print(f"[REFRESH ERROR] {e}", flush=True)
