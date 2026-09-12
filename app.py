@@ -293,6 +293,10 @@ def _clean_close(c):
     c.index = pd.to_datetime(c.index)
     if c.index.tz is not None:
         c.index = c.index.tz_localize(None)
+    # Yahoo occasionally returns duplicate/unsorted dates (notably ^TASI.SR); a
+    # duplicated index makes pd.DataFrame(...) raise "cannot reindex on an axis
+    # with duplicate labels" in modern pandas, so normalize here.
+    c = c[~c.index.duplicated(keep='last')].sort_index()
     return c
 
 def _fetch_close(sym):
@@ -411,7 +415,14 @@ def load_data(mode=DEFAULT_MODE):
     print(f"[DATA LOAD · {mode}] " + " | ".join(log_msgs))
     unique_sources = set(sources_used.values())
 
-    valid_data = {k: v for k, v in data.items() if not v.empty}
+    # Normalize every series (any source: live, cache, or FRED) so a duplicated or
+    # unsorted index can never break the DataFrame assembly below.
+    valid_data = {}
+    for k, v in data.items():
+        if v is None or v.empty:
+            continue
+        v = v[~v.index.duplicated(keep='last')].sort_index()
+        valid_data[k] = v
     if not valid_data:
         return pd.DataFrame(), unique_sources, log_msgs
 
@@ -595,21 +606,24 @@ def compute_mode(mode):
     """Fetch + score one market mode. Returns (bundle|None, sources) and records a
     diagnostic in LOAD_DIAG[mode] so failures are visible in the UI and /health."""
     cfg = MODES[mode]
-    prices, sources, log_msgs = load_data(mode)
-    diag = {'status': 'ok', 'tickers': log_msgs, 'sources': sorted(sources),
-            'rows': int(len(prices)), 'columns': list(prices.columns), 'error': None}
-
-    if prices.empty:
-        diag['status'] = 'no_data'
-        LOAD_DIAG[mode] = diag
-        return None, sources
-
+    diag = {'status': 'ok', 'tickers': [], 'sources': [], 'rows': 0, 'columns': [], 'error': None}
+    sources = set()
     try:
+        prices, sources, log_msgs = load_data(mode)
+        diag['tickers'] = log_msgs
+        diag['sources'] = sorted(sources)
+        diag['rows'] = int(len(prices))
+        diag['columns'] = list(prices.columns)
+        if prices.empty:
+            diag['status'] = 'no_data'
+            LOAD_DIAG[mode] = diag
+            return None, sources
         bundle = _score_mode(prices, cfg)
     except Exception:
-        diag['status'] = 'compute_error'
+        # load errors leave tickers empty; compute errors have them populated.
+        diag['status'] = 'compute_error' if diag['tickers'] else 'load_error'
         diag['error'] = traceback.format_exc()
-        print(f"[COMPUTE ERROR · {mode}]\n{diag['error']}")
+        print(f"[MODE ERROR · {mode}]\n{diag['error']}")
         LOAD_DIAG[mode] = diag
         return None, sources
 
