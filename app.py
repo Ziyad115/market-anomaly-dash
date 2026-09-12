@@ -449,39 +449,43 @@ def _robust_z(series, window, on_returns):
 def compute_anomaly(prices, signals=None, level_assets=None, window=63, k=2.0, burn_in=252, z_fill_limit=5):
     signals = signals if signals is not None else SIGNALS
     level_assets = level_assets if level_assets is not None else ['VIX']
-    df = prices.copy()
-    active_signals = [c for c in signals if c in df.columns]
+    active_signals = [c for c in signals if c in prices.columns]
     return_assets = [c for c in active_signals if c not in level_assets]
-    level_present = [c for c in active_signals if c in level_assets]
 
-    # Each asset's z-score is computed on its OWN native (gap-free) calendar so a market
-    # being closed never manufactures zero-returns, then reindexed onto the shared grid.
-    for col in active_signals:
-        ret, rmean, rstd, z = _robust_z(df[col], window, on_returns=(col in return_assets))
-        df[f'{col}_Return'] = ret.reindex(df.index)
-        df[f'{col}_RollMean'] = rmean.reindex(df.index)
-        df[f'{col}_RollStd'] = rstd.reindex(df.index)
-        df[f'{col}_Zscore'] = z.reindex(df.index)
-
-    zcols = [f'{s}_Zscore' for s in active_signals]
-    n = len(zcols)
-
-    if n == 0:
+    if not active_signals:
+        df = prices.copy()
         df['AnomalyScore'] = np.nan
         df['Threshold'] = np.nan
         df['Flagged'] = False
         return df
 
-    # On a day when one market is closed, carry its most recent z-score forward a few
-    # days so the cross-asset composite and the "today's drivers" breakdown still
-    # reflect it, rather than dropping to NaN/zero. Bounded so stale data can't persist.
+    # Anchor the grid to the PRIMARY asset's own trading calendar (the first signal —
+    # TASI for Saudi, S&P 500 for global). This guarantees the latest row is always a
+    # day the headline market traded, so it can never read "unavailable" just because a
+    # secondary market (e.g. Brent/Gold on a Saudi weekend) posted a later timestamp.
+    primary = active_signals[0]
+    grid = prices[primary].dropna().index
+    df = pd.DataFrame(index=grid)
+
+    # Each asset's z-score is computed on its OWN native (gap-free) calendar so a market
+    # being closed never manufactures zero-returns, then reindexed onto the primary grid.
+    for col in active_signals:
+        ret, rmean, rstd, z = _robust_z(prices[col], window, on_returns=(col in return_assets))
+        df[col] = prices[col].reindex(grid).ffill()           # level, filled for display
+        df[f'{col}_Return'] = ret.reindex(grid)
+        df[f'{col}_RollMean'] = rmean.reindex(grid)
+        df[f'{col}_RollStd'] = rstd.reindex(grid)
+        df[f'{col}_Zscore'] = z.reindex(grid)
+
+    zcols = [f'{s}_Zscore' for s in active_signals]
+    n = len(zcols)
+
+    # On a grid day when a secondary market is closed, carry its most recent z-score
+    # forward a few days so the composite and drivers still reflect it. The primary
+    # asset's z-score is defined on every grid row by construction.
     zf = df[zcols].ffill(limit=z_fill_limit)
     for c in zcols:
         df[c] = zf[c]
-
-    # Forward-fill the price levels too, for display (latest-row levels on cards/hero).
-    for col in active_signals:
-        df[col] = df[col].ffill()
 
     valid_count = df[zcols].notna().sum(axis=1).replace(0, np.nan)
     sum_sq = (df[zcols] ** 2).sum(axis=1)
