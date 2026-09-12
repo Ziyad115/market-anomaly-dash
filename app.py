@@ -249,6 +249,9 @@ def tint(hex_color, alpha):
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-mode computed results: mode -> {DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, TRADING_DAYS}
 MODE_DATA = {}
+# Per-mode load diagnostics: mode -> {status, tickers, sources, rows, error} — surfaced
+# in the "unavailable" view and the /health endpoint so failures are observable.
+LOAD_DIAG = {}
 
 # Kept as module-level aliases to the global mode for any legacy reference.
 DF = None
@@ -410,11 +413,11 @@ def load_data(mode=DEFAULT_MODE):
 
     valid_data = {k: v for k, v in data.items() if not v.empty}
     if not valid_data:
-        return pd.DataFrame(), unique_sources
+        return pd.DataFrame(), unique_sources, log_msgs
 
     df = pd.DataFrame(valid_data)
     df = df.ffill().dropna()
-    return df, unique_sources
+    return df, unique_sources, log_msgs
 
 def compute_anomaly(prices, signals=None, level_assets=None, window=63, k=2.0, burn_in=252):
     signals = signals if signals is not None else SIGNALS
@@ -563,13 +566,14 @@ def get_news_for_date(date_str, days_window=1):
 #  WORKER SYNC & INIT
 # ─────────────────────────────────────────────────────────────────────────────
 def sync_state():
-    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT, DATA_SOURCE, _LOCAL_CACHE_TS, FG_CACHE, MODE_DATA
+    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT, DATA_SOURCE, _LOCAL_CACHE_TS, FG_CACHE, MODE_DATA, LOAD_DIAG
     if not os.path.exists(STATE_FILE): return
     mtime = os.path.getmtime(STATE_FILE)
     if mtime > _LOCAL_CACHE_TS:
         try:
             with open(STATE_FILE, "rb") as f: state = pickle.load(f)
             MODE_DATA = state.get('MODE_DATA', {})
+            LOAD_DIAG = state.get('LOAD_DIAG', {})
             DF = state.get('DF')
             DF_IF = state.get('DF_IF')
             VAL = state.get('VAL')
@@ -588,12 +592,31 @@ def sync_state():
             print(f"[SYNC ERROR] Failed to load state: {e}")
 
 def compute_mode(mode):
-    """Fetch + score one market mode. Returns its data bundle, or None on failure."""
+    """Fetch + score one market mode. Returns (bundle|None, sources) and records a
+    diagnostic in LOAD_DIAG[mode] so failures are visible in the UI and /health."""
     cfg = MODES[mode]
-    prices, sources = load_data(mode)
+    prices, sources, log_msgs = load_data(mode)
+    diag = {'status': 'ok', 'tickers': log_msgs, 'sources': sorted(sources),
+            'rows': int(len(prices)), 'columns': list(prices.columns), 'error': None}
+
     if prices.empty:
+        diag['status'] = 'no_data'
+        LOAD_DIAG[mode] = diag
         return None, sources
 
+    try:
+        bundle = _score_mode(prices, cfg)
+    except Exception:
+        diag['status'] = 'compute_error'
+        diag['error'] = traceback.format_exc()
+        print(f"[COMPUTE ERROR · {mode}]\n{diag['error']}")
+        LOAD_DIAG[mode] = diag
+        return None, sources
+
+    LOAD_DIAG[mode] = diag
+    return bundle, sources
+
+def _score_mode(prices, cfg):
     signals = cfg['signals']
     df = compute_anomaly(prices, signals=signals, level_assets=cfg['level_assets'])
     val = validate_events(df, HISTORICAL_EVENTS, 'Flagged')
@@ -626,11 +649,12 @@ def compute_mode(mode):
         'AVAIL_YEARS': sorted(flags.index.year.unique(), reverse=True),
         'TRADING_DAYS': int(len(df)),
     }
-    return bundle, sources
+    return bundle
 
 def _write_state():
     state = {
         'MODE_DATA': MODE_DATA,
+        'LOAD_DIAG': LOAD_DIAG,
         'DF': DF, 'DF_IF': DF_IF, 'VAL': VAL, 'VAL_IF': VAL_IF,
         'AVAIL_YEARS': AVAIL_YEARS, 'SUMMARY': SUMMARY, 'DATA_OK': DATA_OK,
         'LOAD_ERR': LOAD_ERR, 'TRADING_DAYS': TRADING_DAYS,
@@ -1198,6 +1222,26 @@ def sidebar():
 app = Dash(__name__, suppress_callback_exceptions=True, title="Anomaly — Market Intelligence")
 server = app.server
 
+@server.route('/health')
+def health():
+    """Machine-readable load diagnostics for debugging deployments."""
+    from flask import jsonify
+    sync_state()
+    diag = {}
+    for m, d in (LOAD_DIAG or {}).items():
+        diag[m] = {k: v for k, v in d.items() if k != 'error'}
+        if d.get('error'):
+            diag[m]['error_last_line'] = d['error'].strip().splitlines()[-1]
+    return jsonify({
+        'data_ok': bool(DATA_OK),
+        'modes_loaded': sorted(MODE_DATA.keys()),
+        'modes_configured': list(MODES.keys()),
+        'data_source': DATA_SOURCE,
+        'loaded_at': LOADED_AT,
+        'load_error': LOAD_ERR,
+        'diagnostics': diag,
+    })
+
 app.index_string = '''<!DOCTYPE html>
 <html>
 <head>
@@ -1292,12 +1336,26 @@ def serve_layout():
         )
 
 def mode_unavailable_view(mode):
+    diag = LOAD_DIAG.get(mode, {})
+    detail_children = []
+    if diag:
+        status = diag.get('status', 'unknown')
+        tickers = diag.get('tickers') or []
+        detail_children.append(html.Div(f"status: {status}", className='mono', style={'marginTop': '10px', 'color': ACCENT2, 'fontSize': '12px'}))
+        if tickers:
+            detail_children.append(html.Div(" | ".join(tickers), className='mono', style={'color': MUTE, 'fontSize': '12px', 'marginTop': '4px'}))
+        if diag.get('error'):
+            # Show the final line of the traceback — the actual exception — without a wall of text.
+            last_line = diag['error'].strip().splitlines()[-1]
+            detail_children.append(html.Div(last_line, className='mono', style={'color': DANGER, 'fontSize': '12px', 'marginTop': '6px', 'whiteSpace': 'pre-wrap'}))
+
     return html.Div(className='view-fade-in', children=[
         html.Div(className='context-box', children=[
             html.Span([
                 html.Span(f"The {t('mode_' + mode, 'en')} market data could not be loaded. Try again shortly or switch markets.", className='lang-en'),
                 html.Span(f"تعذّر تحميل بيانات سوق {t('mode_' + mode, 'ar')}. حاول لاحقًا أو بدّل السوق.", className='lang-ar'),
-            ])
+            ]),
+            *detail_children,
         ])
     ])
 
