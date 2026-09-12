@@ -426,46 +426,62 @@ def load_data(mode=DEFAULT_MODE):
     if not valid_data:
         return pd.DataFrame(), unique_sources, log_msgs
 
-    df = pd.DataFrame(valid_data)
-    df = df.ffill().dropna()
+    # Union of each asset's native calendar, WITHOUT forward-filling prices. Markets
+    # with different weekly calendars (e.g. Saudi TASI trades Sun-Thu vs Brent/Gold
+    # Mon-Fri) must not have prices carried across closed days — that manufactures
+    # fake zero-returns. compute_anomaly derives returns per native calendar instead.
+    df = pd.DataFrame(valid_data).sort_index()
+    df = df.dropna(how='all')
     return df, unique_sources, log_msgs
 
-def compute_anomaly(prices, signals=None, level_assets=None, window=63, k=2.0, burn_in=252):
+def _robust_z(series, window, on_returns):
+    """Robust (median/MAD) rolling z-score of a series on its own (gap-free) index.
+    on_returns=True scores log returns; otherwise the level. Returns (return, mean, std, z)."""
+    s = series.dropna()
+    base = np.log(s.clip(lower=1e-9) / s.shift(1).clip(lower=1e-9)) if on_returns else s
+    rolling_median = base.rolling(window).median()
+    rolling_mad = base.rolling(window).apply(lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))), raw=True)
+    roll_std = (rolling_mad * 1.4826).replace(0, np.nan)
+    z = (base - rolling_median) / roll_std
+    ret = base if on_returns else pd.Series(np.nan, index=s.index)
+    return ret, rolling_median, roll_std, z
+
+def compute_anomaly(prices, signals=None, level_assets=None, window=63, k=2.0, burn_in=252, z_fill_limit=5):
     signals = signals if signals is not None else SIGNALS
     level_assets = level_assets if level_assets is not None else ['VIX']
     df = prices.copy()
     active_signals = [c for c in signals if c in df.columns]
-    # Return-based assets get a z-score on log returns; level-based assets (e.g. VIX) on the level itself.
     return_assets = [c for c in active_signals if c not in level_assets]
     level_present = [c for c in active_signals if c in level_assets]
 
-    for col in return_assets:
-        df[f'{col}_Return'] = np.log(df[col].clip(lower=1e-9) / df[col].shift(1).clip(lower=1e-9))
-        rolling_median = df[f'{col}_Return'].rolling(window).median()
-        rolling_mad = df[f'{col}_Return'].rolling(window).apply(lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))), raw=True)
-        roll_std = (rolling_mad * 1.4826).replace(0, np.nan)
-
-        df[f'{col}_RollMean'] = rolling_median
-        df[f'{col}_RollStd'] = roll_std
-        df[f'{col}_Zscore'] = (df[f'{col}_Return'] - rolling_median) / roll_std
-
-    for col in level_present:
-        rolling_median = df[col].rolling(window).median()
-        rolling_mad = df[col].rolling(window).apply(lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))), raw=True)
-        roll_std = (rolling_mad * 1.4826).replace(0, np.nan)
-
-        df[f'{col}_RollMean'] = rolling_median
-        df[f'{col}_RollStd'] = roll_std
-        df[f'{col}_Zscore'] = (df[col] - rolling_median) / roll_std
+    # Each asset's z-score is computed on its OWN native (gap-free) calendar so a market
+    # being closed never manufactures zero-returns, then reindexed onto the shared grid.
+    for col in active_signals:
+        ret, rmean, rstd, z = _robust_z(df[col], window, on_returns=(col in return_assets))
+        df[f'{col}_Return'] = ret.reindex(df.index)
+        df[f'{col}_RollMean'] = rmean.reindex(df.index)
+        df[f'{col}_RollStd'] = rstd.reindex(df.index)
+        df[f'{col}_Zscore'] = z.reindex(df.index)
 
     zcols = [f'{s}_Zscore' for s in active_signals]
     n = len(zcols)
-    
+
     if n == 0:
         df['AnomalyScore'] = np.nan
         df['Threshold'] = np.nan
         df['Flagged'] = False
         return df
+
+    # On a day when one market is closed, carry its most recent z-score forward a few
+    # days so the cross-asset composite and the "today's drivers" breakdown still
+    # reflect it, rather than dropping to NaN/zero. Bounded so stale data can't persist.
+    zf = df[zcols].ffill(limit=z_fill_limit)
+    for c in zcols:
+        df[c] = zf[c]
+
+    # Forward-fill the price levels too, for display (latest-row levels on cards/hero).
+    for col in active_signals:
+        df[col] = df[col].ffill()
 
     valid_count = df[zcols].notna().sum(axis=1).replace(0, np.nan)
     sum_sq = (df[zcols] ** 2).sum(axis=1)
