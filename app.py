@@ -51,6 +51,36 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 SIGNALS = ['S&P500', 'Gold', 'Oil_WTI', 'USD_Index', 'VIX']
 
+# ─── Market modes ────────────────────────────────────────────────────────────
+# Each mode defines its own asset universe. "global" is the original US/world
+# cross-asset set; "saudi" watches the Tadawul All Share Index alongside Brent
+# crude and gold. Gold is shared between modes (same ticker → shared raw cache).
+#   tickers        : display-name → yfinance symbol
+#   fred_map       : display-name → FRED series id (fallback when yfinance fails)
+#   signals        : assets that feed the composite anomaly score, in order
+#   level_assets   : assets scored on their level (e.g. VIX) rather than returns
+#   display_assets : (asset, python-format) pairs shown as raw values on alert cards
+MODES = {
+    'global': {
+        'tickers': {'S&P500': '^GSPC', 'VIX': '^VIX', 'Gold': 'GC=F', 'Oil_WTI': 'CL=F', 'USD_Index': 'DX-Y.NYB'},
+        'fred_map': {'VIX': 'VIXCLS', 'Oil_WTI': 'DCOILWTICO'},
+        'signals': ['S&P500', 'Gold', 'Oil_WTI', 'USD_Index', 'VIX'],
+        'level_assets': ['VIX'],
+        'display_assets': [('S&P500', ',.0f'), ('VIX', '.1f')],
+    },
+    'saudi': {
+        'tickers': {'TASI': '^TASI.SR', 'Oil_Brent': 'BZ=F', 'Gold': 'GC=F'},
+        'fred_map': {'Oil_Brent': 'DCOILBRENTEU'},
+        'signals': ['TASI', 'Oil_Brent', 'Gold'],
+        'level_assets': [],
+        'display_assets': [('TASI', ',.0f'), ('Oil_Brent', ',.1f')],
+    },
+}
+DEFAULT_MODE = 'global'
+
+def get_signals(mode):
+    return MODES.get(mode, MODES[DEFAULT_MODE])['signals']
+
 ACCENT = "#FFFFFF"     
 ACCENT2 = "#8A94A3"    
 POS = "#00E599"        
@@ -93,8 +123,10 @@ TR = {
         'january': 'January', 'february': 'February', 'march': 'March', 'april': 'April', 'may': 'May', 'june': 'June',
         'july': 'July', 'august': 'August', 'september': 'September', 'october': 'October', 'november': 'November', 'december': 'December',
         
-        'assets': {'S&P500': 'S&P 500', 'Gold': 'Gold', 'Oil_WTI': 'Oil', 'USD_Index': 'USD', 'VIX': 'VIX'},
+        'assets': {'S&P500': 'S&P 500', 'Gold': 'Gold', 'Oil_WTI': 'Oil', 'USD_Index': 'USD', 'VIX': 'VIX',
+                   'TASI': 'TASI', 'Oil_Brent': 'Brent'},
         'ranges': {'Last 6 Months': 'Last 6 Months', 'Last 2 Years': 'Last 2 Years', 'Full History (2005-Present)': 'Full History (2005-Present)'},
+        'mode_global': 'Global', 'mode_saudi': 'Saudi', 'switch_mode': 'Switch market',
         
         'evt_lehman': 'Lehman Brothers bankruptcy', 'evt_flash_crash': 'Flash Crash', 'evt_downgrade': 'US credit downgrade',
         'evt_china': 'China devaluation', 'evt_covid': 'COVID-19 Crash', 'evt_circuit': 'Circuit breakers halt',
@@ -146,8 +178,10 @@ TR = {
         'january': 'يناير', 'february': 'فبراير', 'march': 'مارس', 'april': 'أبريل', 'may': 'مايو', 'june': 'يونيو',
         'july': 'يوليو', 'august': 'أغسطس', 'september': 'سبتمبر', 'october': 'أكتوبر', 'november': 'نوفمبر', 'december': 'ديسمبر',
         
-        'assets': {'S&P500': 'إس آند بي 500', 'Gold': 'الذهب', 'Oil_WTI': 'النفط', 'USD_Index': 'مؤشر الدولار', 'VIX': 'مؤشر التقلب (VIX)'},
+        'assets': {'S&P500': 'إس آند بي 500', 'Gold': 'الذهب', 'Oil_WTI': 'النفط', 'USD_Index': 'مؤشر الدولار', 'VIX': 'مؤشر التقلب (VIX)',
+                   'TASI': 'تاسي', 'Oil_Brent': 'نفط برنت'},
         'ranges': {'Last 6 Months': 'آخر 6 أشهر', 'Last 2 Years': 'آخر سنتين', 'Full History (2005-Present)': 'التاريخ الكامل (2005-الآن)'},
+        'mode_global': 'عالمي', 'mode_saudi': 'السعودية', 'switch_mode': 'تبديل السوق',
         
         'evt_lehman': 'إفلاس ليمان براذرز', 'evt_flash_crash': 'الانهيار الخاطف', 'evt_downgrade': 'تخفيض التصنيف الأمريكي',
         'evt_china': 'تخفيض قيمة اليوان', 'evt_covid': 'انهيار أسواق كوفيد', 'evt_circuit': 'توقف التداول',
@@ -210,6 +244,10 @@ def tint(hex_color, alpha):
 # ─────────────────────────────────────────────────────────────────────────────
 #  GLOBAL STATE INITIALIZATION
 # ─────────────────────────────────────────────────────────────────────────────
+# Per-mode computed results: mode -> {DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, TRADING_DAYS}
+MODE_DATA = {}
+
+# Kept as module-level aliases to the global mode for any legacy reference.
 DF = None
 DF_IF = None
 VAL = None
@@ -221,6 +259,10 @@ LOAD_ERR = ""
 TRADING_DAYS = 0
 LOADED_AT = "—"
 DATA_SOURCE = "unknown"
+
+def md(mode):
+    """Return the computed data bundle for a mode, falling back to the default mode."""
+    return MODE_DATA.get(mode) or MODE_DATA.get(DEFAULT_MODE) or {}
 
 FG_CACHE = {'timestamp': None, 'data': None}
 
@@ -263,11 +305,12 @@ def fetch_fg():
         except Exception as e:
             print(f"[FG FETCH ERROR] {e}")
 
-def load_data():
-    global DATA_SOURCE  
-    tickers = {'S&P500': '^GSPC', 'VIX': '^VIX', 'Gold': 'GC=F', 'Oil_WTI': 'CL=F', 'USD_Index': 'DX-Y.NYB'}
-    fred_map = {'VIX': 'VIXCLS', 'Oil_WTI': 'DCOILWTICO'}
-    
+def load_data(mode=DEFAULT_MODE):
+    global DATA_SOURCE
+    cfg = MODES.get(mode, MODES[DEFAULT_MODE])
+    tickers = cfg['tickers']
+    fred_map = cfg['fred_map']
+
     cache = {}
     if os.path.exists(RAW_CACHE_FILE):
         try:
@@ -330,40 +373,44 @@ def load_data():
     except Exception:
         pass
 
-    print("[DATA LOAD] " + " | ".join(log_msgs))
+    print(f"[DATA LOAD · {mode}] " + " | ".join(log_msgs))
     unique_sources = set(sources_used.values())
-    DATA_SOURCE = ", ".join(unique_sources) if unique_sources else "unknown"
 
     valid_data = {k: v for k, v in data.items() if not v.empty}
-    if not valid_data: 
-        return pd.DataFrame()
-        
+    if not valid_data:
+        return pd.DataFrame(), unique_sources
+
     df = pd.DataFrame(valid_data)
     df = df.ffill().dropna()
-    return df
+    return df, unique_sources
 
-def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
+def compute_anomaly(prices, signals=None, level_assets=None, window=63, k=2.0, burn_in=252):
+    signals = signals if signals is not None else SIGNALS
+    level_assets = level_assets if level_assets is not None else ['VIX']
     df = prices.copy()
-    active_price_assets = [c for c in ['S&P500', 'Gold', 'Oil_WTI', 'USD_Index'] if c in df.columns]
-    active_signals = [c for c in SIGNALS if c in df.columns]
-    for col in active_price_assets:
+    active_signals = [c for c in signals if c in df.columns]
+    # Return-based assets get a z-score on log returns; level-based assets (e.g. VIX) on the level itself.
+    return_assets = [c for c in active_signals if c not in level_assets]
+    level_present = [c for c in active_signals if c in level_assets]
+
+    for col in return_assets:
         df[f'{col}_Return'] = np.log(df[col].clip(lower=1e-9) / df[col].shift(1).clip(lower=1e-9))
         rolling_median = df[f'{col}_Return'].rolling(window).median()
         rolling_mad = df[f'{col}_Return'].rolling(window).apply(lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))), raw=True)
         roll_std = (rolling_mad * 1.4826).replace(0, np.nan)
-        
+
         df[f'{col}_RollMean'] = rolling_median
         df[f'{col}_RollStd'] = roll_std
         df[f'{col}_Zscore'] = (df[f'{col}_Return'] - rolling_median) / roll_std
 
-    if 'VIX' in df.columns:
-        rolling_median = df['VIX'].rolling(window).median()
-        rolling_mad = df['VIX'].rolling(window).apply(lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))), raw=True)
+    for col in level_present:
+        rolling_median = df[col].rolling(window).median()
+        rolling_mad = df[col].rolling(window).apply(lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))), raw=True)
         roll_std = (rolling_mad * 1.4826).replace(0, np.nan)
-        
-        df['VIX_RollMean'] = rolling_median
-        df['VIX_RollStd'] = roll_std
-        df['VIX_Zscore'] = (df['VIX'] - rolling_median) / roll_std
+
+        df[f'{col}_RollMean'] = rolling_median
+        df[f'{col}_RollStd'] = roll_std
+        df[f'{col}_Zscore'] = (df[col] - rolling_median) / roll_std
 
     zcols = [f'{s}_Zscore' for s in active_signals]
     n = len(zcols)
@@ -383,7 +430,7 @@ def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
     for s in active_signals:
         df[f'{s}_Contribution'] = (df[f'{s}_Zscore'] ** 2 / safe_denom) * 100
         
-    for s in SIGNALS:
+    for s in signals:
         if s not in active_signals:
             df[f'{s}_Contribution'] = np.nan
 
@@ -395,8 +442,9 @@ def compute_anomaly(prices, window=63, k=2.0, burn_in=252):
     df['Flagged'] = df['AnomalyScore'] > df['Threshold']
     return df
 
-def compute_isolation_forest(scored_df, contamination, burn_in=252, refit_every=63):
-    active_signals = [s for s in SIGNALS if f'{s}_Zscore' in scored_df.columns]
+def compute_isolation_forest(scored_df, contamination, signals=None, burn_in=252, refit_every=63):
+    signals = signals if signals is not None else SIGNALS
+    active_signals = [s for s in signals if f'{s}_Zscore' in scored_df.columns]
     zcols = [f'{s}_Zscore' for s in active_signals]
     out = pd.DataFrame(index=scored_df.index)
     out['IF_Score'] = np.nan
@@ -483,12 +531,13 @@ def get_news_for_date(date_str, days_window=1):
 #  WORKER SYNC & INIT
 # ─────────────────────────────────────────────────────────────────────────────
 def sync_state():
-    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT, DATA_SOURCE, _LOCAL_CACHE_TS, FG_CACHE
+    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT, DATA_SOURCE, _LOCAL_CACHE_TS, FG_CACHE, MODE_DATA
     if not os.path.exists(STATE_FILE): return
     mtime = os.path.getmtime(STATE_FILE)
     if mtime > _LOCAL_CACHE_TS:
         try:
             with open(STATE_FILE, "rb") as f: state = pickle.load(f)
+            MODE_DATA = state.get('MODE_DATA', {})
             DF = state.get('DF')
             DF_IF = state.get('DF_IF')
             VAL = state.get('VAL')
@@ -506,38 +555,74 @@ def sync_state():
         except Exception as e:
             print(f"[SYNC ERROR] Failed to load state: {e}")
 
-def init_data():
-    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT
-    prices = load_data()
+def compute_mode(mode):
+    """Fetch + score one market mode. Returns its data bundle, or None on failure."""
+    cfg = MODES[mode]
+    prices, sources = load_data(mode)
     if prices.empty:
-        raise ValueError("Data fetch returned empty DataFrame. No signals available.")
-    
-    DF = compute_anomaly(prices)
-    VAL = validate_events(DF, HISTORICAL_EVENTS, 'Flagged')
-    detected = sum(r['detected'] for r in VAL)
-    total_ev = len(VAL)
-    n_scored = int(DF['Threshold'].notna().sum())
-    total_flags = int(DF['Flagged'].sum())
+        return None, sources
+
+    signals = cfg['signals']
+    df = compute_anomaly(prices, signals=signals, level_assets=cfg['level_assets'])
+    val = validate_events(df, HISTORICAL_EVENTS, 'Flagged')
+    detected = sum(r['detected'] for r in val)
+    total_ev = len(val)
+    n_scored = int(df['Threshold'].notna().sum())
+    total_flags = int(df['Flagged'].sum())
     flag_rate = (total_flags / n_scored * 100) if n_scored else 0.0
 
     if HAS_SKLEARN:
         contamination = float(min(max(flag_rate / 100.0, 0.005), 0.20))
-        DF_IF = DF.join(compute_isolation_forest(DF, contamination))
-        VAL_IF = validate_events(DF_IF, HISTORICAL_EVENTS, 'IF_Flagged')
+        df_if = df.join(compute_isolation_forest(df, contamination, signals=signals))
+        val_if = validate_events(df_if, HISTORICAL_EVENTS, 'IF_Flagged')
     else:
-        DF_IF = DF
+        df_if = df
+        val_if = None
 
-    SUMMARY = {
+    summary = {
         'detected': detected, 'total_ev': total_ev, 'recall': (detected / total_ev * 100) if total_ev else 0.0,
         'total_flags': total_flags, 'flag_rate': flag_rate,
-        'if_detected': (sum(r['detected'] for r in VAL_IF) if VAL_IF else None),
+        'if_detected': (sum(r['detected'] for r in val_if) if val_if else None),
         'updated': (datetime.now() + timedelta(hours=3)).strftime("%d %b · %H:%M"),
     }
-    if VAL_IF: SUMMARY['if_recall'] = (SUMMARY['if_detected'] / total_ev * 100) if total_ev else 0.0
+    if val_if:
+        summary['if_recall'] = (summary['if_detected'] / total_ev * 100) if total_ev else 0.0
 
-    flags = DF[DF['Flagged'] == True]
-    AVAIL_YEARS = sorted(flags.index.year.unique(), reverse=True)
-    TRADING_DAYS = int(len(DF))
+    flags = df[df['Flagged'] == True]
+    bundle = {
+        'DF': df, 'DF_IF': df_if, 'VAL': val, 'VAL_IF': val_if, 'SUMMARY': summary,
+        'AVAIL_YEARS': sorted(flags.index.year.unique(), reverse=True),
+        'TRADING_DAYS': int(len(df)),
+    }
+    return bundle, sources
+
+def init_data():
+    global DF, DF_IF, VAL, VAL_IF, AVAIL_YEARS, SUMMARY, DATA_OK, LOAD_ERR, TRADING_DAYS, LOADED_AT
+    global MODE_DATA, DATA_SOURCE
+    new_mode_data = {}
+    all_sources = set()
+
+    for mode in MODES:
+        try:
+            bundle, sources = compute_mode(mode)
+        except Exception as e:
+            print(f"[INIT · {mode}] Failed: {e}")
+            bundle, sources = None, set()
+        all_sources |= sources
+        if bundle is not None:
+            new_mode_data[mode] = bundle
+
+    # The default mode must load for the app to be usable; other modes are best-effort.
+    if DEFAULT_MODE not in new_mode_data:
+        raise ValueError("Data fetch returned empty DataFrame. No signals available for the default mode.")
+
+    MODE_DATA = new_mode_data
+    DATA_SOURCE = ", ".join(sorted(all_sources)) if all_sources else "unknown"
+
+    # Point legacy module-level aliases at the default mode.
+    g = MODE_DATA[DEFAULT_MODE]
+    DF, DF_IF, VAL, VAL_IF = g['DF'], g['DF_IF'], g['VAL'], g['VAL_IF']
+    AVAIL_YEARS, SUMMARY, TRADING_DAYS = g['AVAIL_YEARS'], g['SUMMARY'], g['TRADING_DAYS']
     LOADED_AT = (datetime.now() + timedelta(hours=3)).strftime("%d %b %Y · %H:%M:%S")
     DATA_OK = True
 
@@ -553,9 +638,10 @@ def run_init_in_background():
         init_data()
         
         state = {
+            'MODE_DATA': MODE_DATA,
             'DF': DF, 'DF_IF': DF_IF, 'VAL': VAL, 'VAL_IF': VAL_IF,
             'AVAIL_YEARS': AVAIL_YEARS, 'SUMMARY': SUMMARY, 'DATA_OK': DATA_OK,
-            'LOAD_ERR': LOAD_ERR, 'TRADING_DAYS': TRADING_DAYS, 
+            'LOAD_ERR': LOAD_ERR, 'TRADING_DAYS': TRADING_DAYS,
             'LOADED_AT': LOADED_AT, 'DATA_SOURCE': DATA_SOURCE,
             'FG_CACHE': FG_CACHE
         }
@@ -580,7 +666,8 @@ def periodic_refresh(interval_hours=1):
         try:
             print("[REFRESH] Starting scheduled data refresh...", flush=True)
             init_data()
-            state = {'DF': DF, 'DF_IF': DF_IF, 'VAL': VAL, 'VAL_IF': VAL_IF,
+            state = {'MODE_DATA': MODE_DATA,
+                      'DF': DF, 'DF_IF': DF_IF, 'VAL': VAL, 'VAL_IF': VAL_IF,
                       'AVAIL_YEARS': AVAIL_YEARS, 'SUMMARY': SUMMARY, 'DATA_OK': DATA_OK,
                       'LOAD_ERR': LOAD_ERR, 'TRADING_DAYS': TRADING_DAYS, 'LOADED_AT': LOADED_AT,
                       'DATA_SOURCE': DATA_SOURCE, 'FG_CACHE': FG_CACHE}
@@ -607,10 +694,10 @@ def get_market_status(score, threshold, lang):
     if score < threshold * 1.5: return t('status_stress', lang), DANGER
     return t('status_crisis', lang), "#E02424"
 
-def dual_market_narrative(row):
+def dual_market_narrative(row, mode=DEFAULT_MODE):
     score = row.get('AnomalyScore', np.nan)
     thresh = row.get('Threshold', np.nan)
-    contribs = {s: row.get(f'{s}_Contribution', 0) for s in SIGNALS}
+    contribs = {s: row.get(f'{s}_Contribution', 0) for s in get_signals(mode)}
     top_asset_key = max(contribs, key=lambda s: contribs[s] if pd.notna(contribs[s]) else -1)
     pct = contribs[top_asset_key]
     
@@ -632,17 +719,20 @@ def dual_market_narrative(row):
 def get_empty_fig(height=140):
     return go.Figure(layout=dict(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=height, xaxis=dict(visible=False), yaxis=dict(visible=False)))
 
-def build_figure(view, current_color, lang='en'):
+def build_figure(view, current_color, lang='en', mode=DEFAULT_MODE):
+    data_df = md(mode).get('DF')
+    if data_df is None:
+        return get_empty_fig(360)
     if view == "Last 6 Months" or view == t('ranges', lang).get("Last 6 Months"):
-        plot_df = DF.tail(126)
+        plot_df = data_df.tail(126)
     elif view == "Last 2 Years" or view == t('ranges', lang).get("Last 2 Years"):
-        plot_df = DF.tail(504).resample("W").last()
+        plot_df = data_df.tail(504).resample("W").last()
     else:
         def _pick_peak(g):
             if g['AnomalyScore'].notna().any():
                 return g.loc[g['AnomalyScore'].idxmax()]
             return g.iloc[-1]
-        plot_df = DF.groupby(pd.Grouper(freq='ME')).apply(_pick_peak)
+        plot_df = data_df.groupby(pd.Grouper(freq='ME')).apply(_pick_peak)
 
     max_val = np.nanmax([plot_df['AnomalyScore'].max(), plot_df['Threshold'].max()]) if not plot_df.empty else 0
     y_top = max_val * 1.15 if pd.notna(max_val) else 1.0
@@ -698,10 +788,10 @@ def build_figure(view, current_color, lang='en'):
     fig.update_traces(cliponaxis=False)
     return fig
 
-def build_contribution_chart(r_color, lang='en'):
-    row = DF.iloc[-1]
+def build_contribution_chart(r_color, lang='en', mode=DEFAULT_MODE):
+    row = md(mode)['DF'].iloc[-1]
     contribs = {}
-    for s in SIGNALS:
+    for s in get_signals(mode):
         val = row.get(f'{s}_Contribution', np.nan)
         if pd.notna(val):
             contribs[t('assets', lang).get(s, s)] = val
@@ -765,8 +855,10 @@ def fear_greed_kpi():
         
     return kpi_card('fg_index', fg_val_str, None, large=True, value_color=fg_color)
 
-def hero_section():
-    latest = DF.iloc[-1]
+def hero_section(mode=DEFAULT_MODE):
+    data = md(mode)
+    latest = data['DF'].iloc[-1]
+    summary = data['SUMMARY']
     score = latest.get('AnomalyScore', np.nan)
     thresh = latest.get('Threshold', np.nan)
     
@@ -797,7 +889,7 @@ def hero_section():
             html.Div(score_display, className='hero-score', style={'color': r_color, 'textShadow': f'0 0 32px {tint(r_color, 0.3)}'}),
             html.Div(className='hero-metrics', children=[
                 html.Span([delta_val, trans('vs_thresh')], className=delta_class, style={'color': r_color, 'backgroundColor': tint(r_color, 0.1)}),
-                html.Span([trans('last_updated'), f" {SUMMARY.get('updated', '—')}"], className='hero-timestamp')
+                html.Span([trans('last_updated'), f" {summary.get('updated', '—')}"], className='hero-timestamp')
             ])
         ])
     ])
@@ -816,34 +908,38 @@ def get_event(date_str):
         return html.Span([html.Span(t(k, 'en'), className='lang-en'), html.Span(t(k, 'ar'), className='lang-ar')])
     return date_str
 
-def alert_card(date_idx, row):
+def alert_card(date_idx, row, mode=DEFAULT_MODE):
     date_str = date_idx.strftime("%Y-%m-%d")
     days_ago = (datetime.now() - date_idx.to_pydatetime().replace(tzinfo=None)).days
-    
+    signals = get_signals(mode)
+
     is_severe = row['AnomalyScore'] > row['Threshold'] * 1.3
     sev_label = html.Span([html.Span(t('alert_severe', 'en'), className='lang-en'), html.Span(t('alert_severe', 'ar'), className='lang-ar')]) if is_severe else html.Span([html.Span(t('alert_moderate', 'en'), className='lang-en'), html.Span(t('alert_moderate', 'ar'), className='lang-ar')])
     sev = DANGER if is_severe else WARN
 
-    contribs = {s: row.get(f'{s}_Contribution', np.nan) for s in SIGNALS}
+    contribs = {s: row.get(f'{s}_Contribution', np.nan) for s in signals}
     top_asset = max(contribs, key=lambda s: contribs[s] if pd.notna(contribs[s]) else -1)
     top_pct = contribs[top_asset]
-    
+
     pct_display = f"{top_pct:.0f}%" if pd.notna(top_pct) else "—"
     driver_txt = html.Span([
         html.Span(f"{get_asset(top_asset, 'en')} {pct_display}", className='lang-en'),
         html.Span(f"{get_asset(top_asset, 'ar')} {pct_display}", className='lang-ar')
     ])
 
-    sp500_val = f"{row['S&P500']:,.0f}" if 'S&P500' in row and pd.notna(row['S&P500']) else trans('unavailable')
-    vix_val = f"{row['VIX']:.1f}" if 'VIX' in row and pd.notna(row['VIX']) else trans('unavailable')
     thresh_val = f"{row['Threshold']:.2f}" if pd.notna(row.get('Threshold')) else "—"
 
-    stats = [
-        stat_chip('top_driver', driver_txt, driver=True),
-        stat_chip("S&P 500", sp500_val),
-        stat_chip("VIX", vix_val),
-        stat_chip('chart_limit', thresh_val),
-    ]
+    stats = [stat_chip('top_driver', driver_txt, driver=True)]
+    # Headline raw values for this mode's marquee assets (e.g. S&P 500 + VIX, or TASI + Brent).
+    for asset_key, fmt in MODES[mode]['display_assets']:
+        if asset_key in row and pd.notna(row[asset_key]):
+            val_str = format(row[asset_key], fmt)
+        else:
+            val_str = trans('unavailable')
+        label = html.Span([html.Span(get_asset(asset_key, 'en'), className='lang-en'),
+                           html.Span(get_asset(asset_key, 'ar'), className='lang-ar')])
+        stats.append(stat_chip(label, val_str))
+    stats.append(stat_chip('chart_limit', thresh_val))
     p_val = row.get('AnomalyPValue_MV', row.get('AnomalyPValue', np.nan))
     if pd.notna(p_val):
         if p_val < 1e-10:
@@ -893,9 +989,11 @@ def alert_card(date_idx, row):
         ]),
     ])
 
-def build_cards(year, month):
+def build_cards(year, month, mode=DEFAULT_MODE):
     if not DATA_OK: return []
-    flags = DF[DF['Flagged'] == True].sort_index(ascending=False)
+    data_df = md(mode).get('DF')
+    if data_df is None: return []
+    flags = data_df[data_df['Flagged'] == True].sort_index(ascending=False)
     if year and year != "All Years":
         flags = flags[flags.index.year == int(year)]
     if month and month != "All Months":
@@ -911,11 +1009,13 @@ def build_cards(year, month):
 
     children = []
     if note: children.append(note)
-    children += [alert_card(idx, row) for idx, row in flags.iterrows()]
+    children += [alert_card(idx, row, mode) for idx, row in flags.iterrows()]
     return children
 
-def validation_section():
-    s = SUMMARY
+def validation_section(mode=DEFAULT_MODE):
+    data = md(mode)
+    s = data['SUMMARY']
+    VAL = data['VAL']
     cards = html.Div(className='fintech-grid kpi-row', children=[
         kpi_card('crisis_recall', f"{s.get('recall', 0):.0f}%", html.Span(f"{s.get('detected', 0)} / {s.get('total_ev', 0)}"), large=True, value_color=POS if s.get('recall', 0) >= 70 else WARN),
         kpi_card('events_detected', f"{s.get('detected', 0)}", 'within_7d'),
@@ -946,8 +1046,8 @@ def validation_section():
         html.Div(className='glass-card table-wrap', children=table)
     ])
 
-def raw_table():
-    raw = DF_IF.tail(100).copy()
+def raw_table(mode=DEFAULT_MODE):
+    raw = md(mode)['DF_IF'].tail(100).copy()
     raw.insert(0, 'Date', raw.index.strftime('%Y-%m-%d'))
     for c in raw.columns:
         if raw[c].dtype.kind in 'fc':
@@ -1000,6 +1100,26 @@ NAV_ICONS = {
 }
 VIEWS = ["overview", "timeline", "alerts", "validation", "methodology", "raw"]
 
+def mode_badge(mode):
+    """Dual-language label for the currently active market (shown in the top nav)."""
+    flag = '🇸🇦' if mode == 'saudi' else '🌐'
+    return html.Span([
+        html.Span(f"{flag} {t('mode_' + mode, 'en')}", className='lang-en'),
+        html.Span(f"{flag} {t('mode_' + mode, 'ar')}", className='lang-ar'),
+    ])
+
+def mode_toggle_children(current_mode):
+    """Label the toggle with the mode it will switch TO (dual-language)."""
+    other = 'saudi' if current_mode == 'global' else 'global'
+    flag = '🇸🇦' if other == 'saudi' else '🌐'
+    return [
+        html.Span(flag, className='mode-flag'),
+        html.Span([
+            html.Span(t('mode_' + other, 'en'), className='lang-en'),
+            html.Span(t('mode_' + other, 'ar'), className='lang-ar'),
+        ], className='mode-label'),
+    ]
+
 def sidebar():
     nav = [html.Div(id={'type': 'nav', 'index': key},
                     className='nav-item' + (' active' if key == 'overview' else ''),
@@ -1019,6 +1139,8 @@ def sidebar():
         html.Div(className='nav-container', children=[
             html.Div(nav, className='nav-menu'),
             html.Div(className='nav-extra', children=[
+                html.Button(mode_toggle_children(DEFAULT_MODE), id='mode-toggle',
+                            className='mode-toggle-btn', n_clicks=0, title=t('switch_mode', 'en')),
                 html.Button(trans('lang_btn'), id='lang-toggle', className='lang-toggle-btn')
             ]),
         ]),
@@ -1095,18 +1217,21 @@ def serve_layout():
         if not DATA_OK:
             return html.Div(className='error-screen', children=[html.H1("Service Unavailable"), html.P("Market data failed to load. See server logs for details."), html.Code(LOAD_ERR)])
 
-        overview_html = build_view("overview")
+        overview_html = build_view("overview", 'en', DEFAULT_MODE)
 
         return html.Div(id='root-container', className='app-container lang-en', dir='ltr', children=[
             dcc.Interval(id='render-interval', interval=200, max_intervals=1),
             dcc.Store(id='tr-store', data=TR),
             dcc.Store(id='nav-dummy'), dcc.Store(id='collapse-dummy'),
+            dcc.Store(id='mode-store', data=DEFAULT_MODE),
+            dcc.Store(id='active-view', data='overview'),
             sidebar(),
             html.Div(className='main-content', children=[
                 html.Div(className='top-nav', children=[
                     html.Div(className='status-indicator', children=[
                         html.Span(className='status-dot', style={'background': POS, 'boxShadow': f'0 0 10px {POS}'}),
-                        html.Span(trans('live_data'), className='status-src')
+                        html.Span(trans('live_data'), className='status-src'),
+                        html.Span(mode_badge(DEFAULT_MODE), id='active-market-label', className='market-badge'),
                     ])
                 ]),
                 html.Div(overview_html, id='views-wrap'),
@@ -1123,14 +1248,29 @@ def serve_layout():
             ]
         )
 
-def build_view(view_key, lang='en'):
+def mode_unavailable_view(mode):
+    return html.Div(className='view-fade-in', children=[
+        html.Div(className='context-box', children=[
+            html.Span([
+                html.Span(f"The {t('mode_' + mode, 'en')} market data could not be loaded. Try again shortly or switch markets.", className='lang-en'),
+                html.Span(f"تعذّر تحميل بيانات سوق {t('mode_' + mode, 'ar')}. حاول لاحقًا أو بدّل السوق.", className='lang-ar'),
+            ])
+        ])
+    ])
+
+def build_view(view_key, lang='en', mode=DEFAULT_MODE):
+    data = md(mode)
+    if not data or mode not in MODE_DATA:
+        return mode_unavailable_view(mode)
+
     if view_key == "overview":
-        latest = DF.iloc[-1]
+        latest = data['DF'].iloc[-1]
+        summary = data['SUMMARY']
         score, thresh = latest.get('AnomalyScore', np.nan), latest.get('Threshold', np.nan)
         _, r_color = get_market_status(score, thresh, 'en')
-        
+
         try:
-            fig_overview = build_figure("Last 6 Months", r_color, 'en')
+            fig_overview = build_figure("Last 6 Months", r_color, 'en', mode)
         except Exception as e:
             print(f"[CHART ERROR] overview-chart: {e}")
             fig_overview = get_empty_fig()
@@ -1141,7 +1281,7 @@ def build_view(view_key, lang='en'):
         ])
 
         try:
-            fig_contrib = build_contribution_chart(r_color, 'en')
+            fig_contrib = build_contribution_chart(r_color, 'en', mode)
         except Exception as e:
             print(f"[CHART ERROR] contrib-chart: {e}")
             fig_contrib = get_empty_fig()
@@ -1153,7 +1293,7 @@ def build_view(view_key, lang='en'):
             ]),
             html.Div(className='glass-card flex-col', **{'data-aos': 'fade-up'}, children=[
                 html.Div(trans('market_narrative'), className='card-title'),
-                html.Div(dual_market_narrative(latest), className='narrative-text')
+                html.Div(dual_market_narrative(latest, mode), className='narrative-text')
             ])
         ])
 
@@ -1170,13 +1310,13 @@ def build_view(view_key, lang='en'):
             thresh_kpi_card = kpi_card('exp_thresh', trans('unavailable'), 'causal_mean', icon_name='lucide:git-branch')
 
         try:
-            freq_kpi_card = kpi_card('alert_freq', f"{SUMMARY.get('flag_rate', 0):.1f}%", 'all_time_rate', icon_name='lucide:activity')
+            freq_kpi_card = kpi_card('alert_freq', f"{summary.get('flag_rate', 0):.1f}%", 'all_time_rate', icon_name='lucide:activity')
         except Exception as e:
             print(f"[KPI ERROR] freq_kpi_card: {e}")
             freq_kpi_card = kpi_card('alert_freq', trans('unavailable'), 'all_time_rate', icon_name='lucide:activity')
-            
+
         try:
-            alerts_kpi_card = kpi_card('total_alerts', f"{SUMMARY.get('total_flags', 0)}", 'hist_events', icon_name='lucide:bell-ring', value_color=ACCENT)
+            alerts_kpi_card = kpi_card('total_alerts', f"{summary.get('total_flags', 0)}", 'hist_events', icon_name='lucide:bell-ring', value_color=ACCENT)
         except Exception as e:
             print(f"[KPI ERROR] alerts_kpi_card: {e}")
             alerts_kpi_card = kpi_card('total_alerts', trans('unavailable'), 'hist_events', icon_name='lucide:bell-ring', value_color=ACCENT)
@@ -1188,7 +1328,7 @@ def build_view(view_key, lang='en'):
             alerts_kpi_card,
         ])
 
-        return html.Div(className='view-fade-in', children=[hero_section(), row_1, row_2, row_3])
+        return html.Div(className='view-fade-in', children=[hero_section(mode), row_1, row_2, row_3])
 
     elif view_key == "timeline":
         return html.Div(className='view-fade-in', children=[
@@ -1201,12 +1341,12 @@ def build_view(view_key, lang='en'):
                                  {'label': html.Span([html.Span("Full History (2005-Present)", className='lang-en'), html.Span("التاريخ الكامل (2005-الآن)", className='lang-ar')]), 'value': "Full History (2005-Present)"}],
                         value="Last 2 Years"),
                 ]),
-                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT, lang), config={'displayModeBar': False, 'responsive': True})]),
+                html.Div(dir='ltr', children=[dcc.Graph(id='anomaly-chart', figure=build_figure("Last 2 Years", ACCENT, lang, mode), config={'displayModeBar': False, 'responsive': True})]),
             ])
         ])
 
     elif view_key == "alerts":
-        year_opts = [{'label': html.Span([html.Span(t('all_years', 'en'), className='lang-en'), html.Span(t('all_years', 'ar'), className='lang-ar')]), 'value': 'All Years'}] + [{'label': str(y), 'value': str(y)} for y in AVAIL_YEARS]
+        year_opts = [{'label': html.Span([html.Span(t('all_years', 'en'), className='lang-en'), html.Span(t('all_years', 'ar'), className='lang-ar')]), 'value': 'All Years'}] + [{'label': str(y), 'value': str(y)} for y in data['AVAIL_YEARS']]
         month_opts = [{'label': html.Span([html.Span(t('all_months', 'en'), className='lang-en'), html.Span(t('all_months', 'ar'), className='lang-ar')]), 'value': 'All Months'}]
         for m in MONTH_NAMES: month_opts.append({'label': trans(m.lower()), 'value': m})
         
@@ -1221,7 +1361,7 @@ def build_view(view_key, lang='en'):
         ])
 
     elif view_key == "validation":
-        return html.Div(className='view-fade-in', children=[validation_section()])
+        return html.Div(className='view-fade-in', children=[validation_section(mode)])
 
     elif view_key == "methodology":
         return methodology_view()
@@ -1229,7 +1369,7 @@ def build_view(view_key, lang='en'):
     elif view_key == "raw":
         return html.Div(className='view-fade-in', children=[
             html.H2(trans('raw_data_exp'), className='section-title'),
-            html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=raw_table())
+            html.Div(className='glass-card', **{'data-aos': 'fade-up'}, children=raw_table(mode))
         ])
 
     return html.Div("View not found.")
@@ -1260,42 +1400,66 @@ app.clientside_callback(
 @callback(
     Output('views-wrap', 'children'),
     Output({'type': 'nav', 'index': ALL}, 'className'),
+    Output('active-view', 'data'),
     Input({'type': 'nav', 'index': ALL}, 'n_clicks'),
     State('root-container', 'className'),
+    State('mode-store', 'data'),
     prevent_initial_call=True
 )
-def switch_view(n_clicks, current_class):
+def switch_view(n_clicks, current_class, mode):
     if not any(c for c in n_clicks if c is not None):
-        return no_update, no_update
-        
+        return no_update, no_update, no_update
+
     view_key = 'overview'
     if ctx.triggered_id:
         view_key = ctx.triggered_id['index']
-        
-    lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
-    view_html = build_view(view_key, lang)
-    nav_classes = ['nav-item active' if key == view_key else 'nav-item' for key in VIEWS]
-    
-    return view_html, nav_classes
 
-@callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), prevent_initial_call=True)
-def update_timeline_chart(view, current_class):
+    lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
+    view_html = build_view(view_key, lang, mode or DEFAULT_MODE)
+    nav_classes = ['nav-item active' if key == view_key else 'nav-item' for key in VIEWS]
+
+    return view_html, nav_classes, view_key
+
+@callback(
+    Output('views-wrap', 'children', allow_duplicate=True),
+    Output('mode-store', 'data'),
+    Output('mode-toggle', 'children'),
+    Output('active-market-label', 'children'),
+    Input('mode-toggle', 'n_clicks'),
+    State('mode-store', 'data'),
+    State('active-view', 'data'),
+    State('root-container', 'className'),
+    prevent_initial_call=True
+)
+def toggle_mode(n_clicks, cur_mode, active_view, current_class):
+    if not n_clicks:
+        return no_update, no_update, no_update, no_update
+
+    cur_mode = cur_mode or DEFAULT_MODE
+    new_mode = 'saudi' if cur_mode == 'global' else 'global'
+    lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
+    view_html = build_view(active_view or 'overview', lang, new_mode)
+    return view_html, new_mode, mode_toggle_children(new_mode), mode_badge(new_mode)
+
+@callback(Output('anomaly-chart', 'figure', allow_duplicate=True), Input('range-dd', 'value'), State('root-container', 'className'), State('mode-store', 'data'), prevent_initial_call=True)
+def update_timeline_chart(view, current_class, mode):
     if not DATA_OK: return no_update
     lang = 'ar' if 'lang-ar' in (current_class or '') else 'en'
-    return build_figure(view or "Last 6 Months", ACCENT, lang)
+    return build_figure(view or "Last 6 Months", ACCENT, lang, mode or DEFAULT_MODE)
 
-@callback(Output('month-dd', 'options'), Output('month-dd', 'value'), Input('year-dd', 'value'))
-def update_months(year):
+@callback(Output('month-dd', 'options'), Output('month-dd', 'value'), Input('year-dd', 'value'), State('mode-store', 'data'))
+def update_months(year, mode):
     opts = [{'label': trans('all_months'), 'value': 'All Months'}]
-    if DATA_OK and year and year != "All Years":
-        flags = DF[DF['Flagged'] == True]
+    data_df = md(mode or DEFAULT_MODE).get('DF')
+    if DATA_OK and data_df is not None and year and year != "All Years":
+        flags = data_df[data_df['Flagged'] == True]
         months = sorted(flags[flags.index.year == int(year)].index.month.unique())
         opts += [{'label': trans(MONTH_NAMES[m - 1].lower()), 'value': MONTH_NAMES[m - 1]} for m in months]
     return opts, 'All Months'
 
-@callback(Output('cards-container', 'children'), Input('year-dd', 'value'), Input('month-dd', 'value'))
-def update_cards(year, month):
-    return build_cards(year, month)
+@callback(Output('cards-container', 'children'), Input('year-dd', 'value'), Input('month-dd', 'value'), State('mode-store', 'data'))
+def update_cards(year, month, mode):
+    return build_cards(year, month, mode or DEFAULT_MODE)
 
 @callback(Output({'type': 'news-out', 'index': MATCH}, 'children'),
           Input({'type': 'news-btn', 'index': MATCH}, 'n_clicks'),
