@@ -90,7 +90,7 @@ svg { display: block; }
 /* Nav Menu & Extra */
 .nav-container { display: flex; flex-direction: column; gap: 12px; }
 .nav-menu { display: flex; flex-direction: column; gap: 6px; }
-.nav-extra { display: flex; justify-content: flex-start; padding: 0 14px; margin-top: 4px; transition: padding 0.3s var(--ease); }
+.nav-extra { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; padding: 0 14px; margin-top: 4px; transition: padding 0.3s var(--ease); }
 
 .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px; color: var(--text-secondary); font-size: 13.5px; font-weight: 500; cursor: pointer; transition: all 0.3s var(--ease); white-space: nowrap; }
 .nav-item .ico { width: 16px; text-align: center; flex-shrink: 0; }
@@ -130,10 +130,49 @@ svg { display: block; }
     justify-content: center;
     flex-shrink: 0;
 }
-.lang-toggle-btn:hover { 
-    background: rgba(0, 229, 153, 0.15); 
-    box-shadow: 0 0 12px rgba(0, 229, 153, 0.2); 
-    border-color: rgba(0, 229, 153, 0.5); 
+.lang-toggle-btn:hover {
+    background: rgba(0, 229, 153, 0.15);
+    box-shadow: 0 0 12px rgba(0, 229, 153, 0.2);
+    border-color: rgba(0, 229, 153, 0.5);
+}
+
+/* Market (mode) Toggle Button — distinct blue accent */
+.mode-toggle-btn {
+    background: rgba(92, 107, 255, 0.1);
+    border: 1px solid rgba(92, 107, 255, 0.3);
+    color: #9AA5FF;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s var(--ease);
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.mode-toggle-btn:hover {
+    background: rgba(92, 107, 255, 0.18);
+    box-shadow: 0 0 12px rgba(92, 107, 255, 0.22);
+    border-color: rgba(92, 107, 255, 0.55);
+}
+
+/* Active-market badge in the top nav */
+.market-badge {
+    margin-inline-start: 10px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #9AA5FF;
+    background: rgba(92, 107, 255, 0.1);
+    border: 1px solid rgba(92, 107, 255, 0.25);
+    white-space: nowrap;
 }
 
 /* Collapsed Overrides */
@@ -143,6 +182,9 @@ svg { display: block; }
 .app-container.collapsed .logo-left { gap: 0; justify-content: center; }
 .app-container.collapsed .lang-toggle-btn { padding: 8px; }
 .app-container.collapsed .lang-toggle-btn .lang-en, .app-container.collapsed .lang-toggle-btn .lang-ar { max-width: 0; opacity: 0; overflow: hidden; display: none; }
+.app-container.collapsed .mode-toggle-btn { padding: 8px; gap: 0; }
+.app-container.collapsed .mode-label { max-width: 0; opacity: 0; overflow: hidden; display: none; }
+.app-container.collapsed .market-badge { display: none; }
 
 /* Fade out */
 .app-container.collapsed .logo-wordmark, .app-container.collapsed .nav-label, .app-container.collapsed .made-by-credit { max-width: 0; opacity: 0; margin: 0; padding: 0; border-width: 0; }
